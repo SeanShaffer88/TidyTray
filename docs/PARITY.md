@@ -26,13 +26,13 @@ missing), **Not started**, **Excluded** (Tier 3, will not be built).
 | Config with schema_version + migration | Done | src/appconfig.rs |
 | Safety property tests (§11.3) | Done | src/safety_tests.rs |
 | Tauri commands for the safety core | Done | safety_status / safety_clean_now / safety_restore / safety_purge_quarantine in src/commands.rs |
-| UI screens for the safety core | Not started | M2: status window, logs viewer, settings |
+| UI screens for the safety core | Done | Safety screen in the main window (status + dry-run progress, schedule/pause settings, category toggles, quarantine review & restore, recent runs, open-log) in the app's existing style; design approved by the owner from a rendered mockup before building |
 | Legacy Smart Clean routed through quarantine | Not started | Planned M3; documented honestly in SAFETY.md |
 
 ## M2–M6 (blueprint roadmap)
 | Milestone | Status |
 |---|---|
-| M2 Autonomous loop (scheduler, pre-flight checks, tray kill switch, dry-run opt-in flow) | Backend complete — Task Scheduler task via schtasks (weekly/daily), battery/fullscreen pre-flight gate, tray Run/Pause items + status line, `--autonomous-run` / `--clean-now` / `--status` CLI, autonomous enable gated on the dry-run phase and installing the task. Safety UI screens remain under M2's UI slice |
+| M2 Autonomous loop (scheduler, pre-flight checks, tray kill switch, dry-run opt-in flow) | Backend complete — Task Scheduler task via schtasks (weekly/daily), battery/fullscreen pre-flight gate, tray Run/Pause items + status line, `--autonomous-run` / `--clean-now` / `--status` CLI, autonomous enable gated on the dry-run phase and installing the task. Safety screen followed in the M2 UI slice (owner-approved design) |
 | M3 Tier 1 categories complete on the Windows test matrix | Partial — all 9 categories are in the manifest; field matrix not yet run |
 | M4 Tier 2 foundation (preview/diff, restore point, undo artifacts, elevated helper) | Not started |
 | M5 Tier 2 full catalog (incl. the 2026-11-10 mining from W10Privacy, ShutUp10++, Winaero Tweaker and XToolbox — see BLUEPRINT.md §2) | Not started |
