@@ -256,3 +256,17 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .chg .vals { font: 12px var(--m); color: var(--ink2); margin-top: 3px; }
 .chg .vals em { font-style: normal; color: var(--amber); }
 .chg .vals strong { color: var(--green-ink); }
+
+/* --- Apps (Tier 2, M5) ------------------------------------------------------ */
+.seg{display:inline-flex;padding:2px;border-radius:8px;background:var(--seg-bg);flex:none}
+.seg button{height:26px;padding:0 14px;border-radius:6px;border:0;background:transparent;color:var(--ink2);font:600 12.5px var(--t);cursor:pointer}
+.seg button.on{background:var(--card);color:var(--ink);box-shadow:0 0 0 1px var(--line)}
+.cbx{width:17px;height:17px;border-radius:5px;border:1.5px solid var(--check-line);flex:none;display:grid;place-items:center;color:#fff;font-size:11px;cursor:pointer}
+.cbx.on{background:var(--green);border-color:var(--green)}
+.cbx.dis{opacity:.35;cursor:default}
+.risk{font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px;flex:none}
+.risk.safe{background:var(--green-soft);color:var(--green-ink)}
+.risk.caution{background:#B45309;color:#fff}
+.risk.advanced{background:#DC2626;color:#fff}
+.pkg{font:11px var(--m);color:var(--ink3)}
+.psel{height:32px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);padding:0 8px;font:500 12.5px var(--t)}
