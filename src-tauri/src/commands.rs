@@ -93,7 +93,10 @@ pub async fn smart_scan(state: State<'_, AppState>) -> TidyResult<ScanReport> {
 }
 
 /// Cleans the given categories. `dry_run` defaults to the setting (on by default);
-/// a real delete needs both `dry_run: false` here and dry-run disabled in settings.
+/// a real run needs both `dry_run: false` here and dry-run disabled in settings.
+/// Real runs move files into quarantine (blueprint M3) — nothing is deleted
+/// outright; the move is audit-logged and expired quarantine content is
+/// purged under the configured retention afterwards.
 #[tauri::command]
 pub async fn clean(state: State<'_, AppState>, categories: Vec<String>, dry_run: Option<bool>) -> TidyResult<CleanReport> {
     if state.last_scan.lock().map(|s| s.is_none()).unwrap_or(true) {
@@ -103,7 +106,21 @@ pub async fn clean(state: State<'_, AppState>, categories: Vec<String>, dry_run:
     let dry = settings.dry_run || dry_run.unwrap_or(true) || demo_mode();
     let report = tauri::async_runtime::spawn_blocking(move || {
         let targets = scanner::default_targets(settings.min_temp_age_hours);
-        scanner::clean(&targets, &categories, &safe_list(&settings), dry)
+        let quarantine = crate::quarantine::Quarantine::new(crate::appconfig::quarantine_dir());
+        let run_id = crate::audit::new_run_id();
+        let report = scanner::clean(&targets, &categories, &safe_list(&settings), dry, &quarantine, &run_id);
+        if !report.dry_run {
+            let log = crate::audit::AuditLog::new(crate::appconfig::logs_dir());
+            let _ = log.append(
+                &crate::audit::LogEntry::new(&run_id, "run")
+                    .size(report.freed_bytes)
+                    .result("smart-clean: moved to quarantine"),
+            );
+            let cfg = crate::appconfig::AppConfig::load_from(&crate::appconfig::config_path());
+            let retention = std::time::Duration::from_secs(cfg.quarantine.retention_days * 86_400);
+            quarantine.purge_expired(retention, std::time::SystemTime::now());
+        }
+        report
     })
     .await
     .map_err(|e| TidyError::Other(e.to_string()))?;

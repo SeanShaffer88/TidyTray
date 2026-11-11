@@ -63,9 +63,11 @@ is manual, previewed, logged, and reversible.**
 
 - The pre-move "file is in use" check is best-effort. If a move fails, the
   file is skipped and the failure is logged — it is never retried with force.
-- The legacy Smart Clean from the upstream project is a separate, fully
-  manual, dry-run-by-default feature with its own safe-list. Routing it
-  through quarantine as well is planned (see PARITY.md); until then, the
-  quarantine guarantee covers the autonomous engine's runs.
+- The legacy Smart Clean from the upstream project is fully manual and
+  dry-run-by-default, with its own safe-list. Since M3 it also moves files
+  into quarantine instead of deleting them, and its runs are audit-logged;
+  the quarantine guarantee now covers every cleaning path in the app.
+  (Its Recycle Bin category remains a no-op during cleaning, as upstream:
+  emptying the Recycle Bin is Explorer's job.)
 - Wording in the UI says "conservative", "regenerable" and "reversible" —
   never "100% safe" or "guaranteed".

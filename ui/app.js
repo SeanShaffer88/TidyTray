@@ -488,9 +488,9 @@ V.cleanup = () => {
 
   const sub = p == null ? `Smart Scan found ${fmt(S.cats.reduce((a, c) => a + c.bytes, 0))} in ${(S.scanMs / 1000).toFixed(1)} s · ${n(S.cats.reduce((a, c) => a + c.files, 0))} files`
 
-    : done ? `C: now has ${fmt(sysFree)} free` : 'Cleaning…';
+    : done ? (S.dry ? 'Dry run — nothing was moved' : 'Moved to quarantine — restore any file from the Safety screen within 7 days') : 'Cleaning…';
 
-  const title = p == null ? 'Cleanup' : `<span class="done">${ring}<span><b>${fmt(freed)} freed</b></span></span>`;
+  const title = p == null ? 'Cleanup' : `<span class="done">${ring}<span><b>${fmt(freed)} ${S.dry ? 'found' : 'cleaned'}</b></span></span>`;
 
   return `<div class="head"><div>${p == null ? `<h1>${title}</h1>` : title}<p>${sub}</p></div></div>
 

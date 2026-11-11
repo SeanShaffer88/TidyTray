@@ -27,7 +27,7 @@ missing), **Not started**, **Excluded** (Tier 3, will not be built).
 | Safety property tests (§11.3) | Done | src/safety_tests.rs |
 | Tauri commands for the safety core | Done | safety_status / safety_clean_now / safety_restore / safety_purge_quarantine in src/commands.rs |
 | UI screens for the safety core | Done | Safety screen in the main window (status + dry-run progress, schedule/pause settings, category toggles, quarantine review & restore, recent runs, open-log) in the app's existing style; design approved by the owner from a rendered mockup before building |
-| Legacy Smart Clean routed through quarantine | Not started | Planned M3; documented honestly in SAFETY.md |
+| Legacy Smart Clean routed through quarantine | Done (M3) | scanner::clean moves files via Quarantine::move_file (thread-safe index); runs audit-logged, retention purge applied; Cleanup screen copy corrected — a real clean now says files were moved to quarantine, not freed |
 
 ## M2–M6 (blueprint roadmap)
 | Milestone | Status |

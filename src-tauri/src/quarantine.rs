@@ -29,14 +29,20 @@ struct RunIndex {
     entries: Vec<QuarantineEntry>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Quarantine {
     root: PathBuf,
+    /// Serializes index read-modify-write inside `move_file` so the legacy
+    /// scanner's parallel walker can share one instance safely.
+    move_lock: std::sync::Mutex<()>,
 }
 
 impl Quarantine {
     pub fn new(root: PathBuf) -> Self {
-        Self { root }
+        Self {
+            root,
+            move_lock: std::sync::Mutex::new(()),
+        }
     }
 
     /// Kept for the M2 quarantine viewer.
@@ -81,6 +87,10 @@ impl Quarantine {
         src: &Path,
     ) -> std::io::Result<QuarantineEntry> {
         let size = fs::metadata(src)?.len();
+        let _guard = self
+            .move_lock
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let dir = self.run_dir(run_id).join(category);
         fs::create_dir_all(&dir)?;
         let name = src
