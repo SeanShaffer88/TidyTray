@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- M4: Tier 2 foundation — a new Tweaks screen with the first 10 manual
+  tweaks (privacy, debloat, Explorer & taskbar). Changes are staged,
+  previewed with their exact before/after values, then applied with a
+  System Restore point (when possible) and recorded prior values, so
+  the last change can always be undone. Machine-level changes ask for
+  administrator approval once, in a single elevated step. Includes a
+  one-click Recommended preset, search, and matching command-line
+  operations (`--tweaks`, `--tweak-apply`, `--tweak-undo`).
+
 - New default theme: GitHub-style dark across the whole app. The original
   light theme is kept as an option — switch any time with the moon button
   at the bottom of the sidebar; the choice is saved in settings.
