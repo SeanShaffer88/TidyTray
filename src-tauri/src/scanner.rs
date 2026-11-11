@@ -220,7 +220,7 @@ impl Tally {
         }
         if let Ok(mut top) = self.largest.lock() {
             top.push(FileSample { path: path.to_string_lossy().into_owned(), bytes });
-            top.sort_by(|a, b| b.bytes.cmp(&a.bytes));
+            top.sort_by_key(|s| std::cmp::Reverse(s.bytes));
             top.truncate(5);
         }
     }
@@ -289,14 +289,14 @@ where
 }
 
 #[cfg(windows)]
-fn is_reparse_point(meta: &fs::Metadata) -> bool {
+pub(crate) fn is_reparse_point(meta: &fs::Metadata) -> bool {
     use std::os::windows::fs::MetadataExt;
     const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
     meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
 }
 
 #[cfg(not(windows))]
-fn is_reparse_point(_meta: &fs::Metadata) -> bool {
+pub(crate) fn is_reparse_point(_meta: &fs::Metadata) -> bool {
     false
 }
 
