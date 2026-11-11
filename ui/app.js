@@ -1178,6 +1178,8 @@ async function live() {
 
     S.startup = (await invoke('list_startup')).map(s => ({ ...s, color: colorOf(s.name) }));
 
+    await loadSafety(); // so the sidebar Safety badge shows the real state on every screen, not only after visiting Safety
+
     applyProcs(await invoke('list_processes', { sort: S.sort }));
 
     $('#pc-name').textContent = o.host; $('#pc-os').textContent = o.os;
