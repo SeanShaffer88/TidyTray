@@ -20,6 +20,7 @@ mod processes;
 mod safelist;
 mod scanner;
 mod startup;
+mod tier2;
 mod state;
 
 use std::time::Duration;
@@ -149,6 +150,40 @@ fn main() {
     if args.iter().any(|a| a == "--autonomous-run") {
         std::process::exit(safety::headless_autonomous_run());
     }
+    if let Some(pos) = args.iter().position(|a| a == "--tier2-elevated") {
+        // Elevated helper for Tier 2 machine-level writes + restore point.
+        // Runs the batch, writes its result file, exits before any UI starts.
+        let code = args
+            .get(pos + 1)
+            .map(|p| tier2::run_elevated_helper(std::path::Path::new(p)))
+            .unwrap_or(3);
+        std::process::exit(code);
+    }
+    if args.iter().any(|a| a == "--tweaks") {
+        let store = tier2::system_store();
+        let states = tier2::list_states(&store);
+        println!("{}", serde_json::to_string_pretty(&states).unwrap_or_default());
+        return;
+    }
+    if let Some(pos) = args.iter().position(|a| a == "--tweak-apply") {
+        // --tweak-apply id:on,id:off — same previewed pipeline as the window:
+        // restore point attempted, undo batch recorded, outcome as JSON.
+        let spec = args.get(pos + 1).cloned().unwrap_or_default();
+        let changes: Vec<(String, bool)> = spec
+            .split(',')
+            .filter_map(|part| part.rsplit_once(':').map(|(id, v)| (id.to_string(), v == "on")))
+            .collect();
+        let store = tier2::system_store();
+        let outcome = tier2::apply_changes(&store, &appconfig::data_dir(), &appconfig::logs_dir(), &changes, true);
+        println!("{}", serde_json::to_string_pretty(&outcome).unwrap_or_default());
+        std::process::exit(if outcome.failed.is_empty() { 0 } else { 2 });
+    }
+    if args.iter().any(|a| a == "--tweak-undo") {
+        let store = tier2::system_store();
+        let outcome = tier2::undo_last(&store, &appconfig::data_dir(), &appconfig::logs_dir());
+        println!("{}", serde_json::to_string_pretty(&outcome).unwrap_or_default());
+        std::process::exit(if outcome.failed.is_empty() { 0 } else { 2 });
+    }
     if args.iter().any(|a| a == "--clean-now") {
         std::process::exit(safety::headless_clean_now(args.iter().any(|a| a == "--apply")));
     }
@@ -207,6 +242,11 @@ fn main() {
             commands::safety_quarantine_list,
             commands::safety_open_logs,
             commands::safety_set_pauses,
+            commands::tier2_list,
+            commands::tier2_preview,
+            commands::tier2_apply,
+            commands::tier2_undo_last,
+            commands::tier2_undo_available,
             commands::check_path,
         ])
         .run(tauri::generate_context!())

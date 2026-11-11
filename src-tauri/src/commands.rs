@@ -424,6 +424,66 @@ pub fn safety_quarantine_list() -> Vec<crate::quarantine::QuarantineEntry> {
     crate::quarantine::Quarantine::new(crate::appconfig::quarantine_dir()).entries()
 }
 
+// ---------------------------------------------------------------------------
+// Tier 2 tweaks (blueprint M4): manual, previewed, reversible. Staging lives
+// in the UI; these commands detect, preview, apply (restore point + undo
+// batch) and undo. The same operations back the --tweaks CLI flags.
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Tier2Change {
+    pub id: String,
+    pub applied: bool,
+}
+
+fn tier2_data_dir() -> std::path::PathBuf {
+    crate::appconfig::data_dir()
+}
+
+#[tauri::command]
+pub fn tier2_list() -> TidyResult<Vec<crate::tier2::ToggleState>> {
+    let store = crate::tier2::system_store();
+    Ok(crate::tier2::list_states(&store))
+}
+
+#[tauri::command]
+pub fn tier2_preview(changes: Vec<Tier2Change>) -> TidyResult<Vec<crate::tier2::PlannedChange>> {
+    let store = crate::tier2::system_store();
+    let pairs: Vec<(String, bool)> = changes.iter().map(|c| (c.id.clone(), c.applied)).collect();
+    Ok(crate::tier2::plan(&pairs, &store))
+}
+
+#[tauri::command]
+pub async fn tier2_apply(changes: Vec<Tier2Change>) -> TidyResult<crate::tier2::ApplyOutcome> {
+    let pairs: Vec<(String, bool)> = changes.iter().map(|c| (c.id.clone(), c.applied)).collect();
+    let outcome = tauri::async_runtime::spawn_blocking(move || {
+        let store = crate::tier2::system_store();
+        crate::tier2::apply_changes(&store, &tier2_data_dir(), &crate::appconfig::logs_dir(), &pairs, true)
+    })
+    .await
+    .map_err(|e| TidyError::Other(e.to_string()))?;
+    Ok(outcome)
+}
+
+#[tauri::command]
+pub async fn tier2_undo_last() -> TidyResult<crate::tier2::UndoOutcome> {
+    let outcome = tauri::async_runtime::spawn_blocking(move || {
+        let store = crate::tier2::system_store();
+        crate::tier2::undo_last(&store, &tier2_data_dir(), &crate::appconfig::logs_dir())
+    })
+    .await
+    .map_err(|e| TidyError::Other(e.to_string()))?;
+    Ok(outcome)
+}
+
+/// Number of changes in the latest undo batch, or null when there is
+/// nothing to undo.
+#[tauri::command]
+pub fn tier2_undo_available() -> TidyResult<Option<usize>> {
+    Ok(crate::tier2::undo_available(&tier2_data_dir()))
+}
+
 /// Opens the audit-log folder in Explorer.
 #[tauri::command]
 pub fn safety_open_logs() -> TidyResult<()> {
