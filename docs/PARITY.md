@@ -38,6 +38,30 @@ missing), **Not started**, **Excluded** (Tier 3, will not be built).
 | M5 Tier 2 full catalog (incl. the 2026-11-10 mining from W10Privacy, ShutUp10++, Winaero Tweaker and XToolbox — see BLUEPRINT.md §2) | Done — Apps screen (owner-approved design): 26-entry removal catalog with Safe/Caution/Advanced badges and per-app reinstall sources, detected against the real installed set; removal via one elevated helper run (restore point first, provisioned copies removed too) with undo records — winget-backed apps reinstall automatically, Store apps are reported for manual reinstall; 21-app winget install catalog with installed detection, two built-in profiles plus user-saved profiles. Honest limits: removal targets the current user plus the provisioned copy; catalogs grow from here toward the blueprint's ~90 removal entries |
 | M6 Polish & release | Done — product renamed to TidyTray everywhere (app name, binary, identifier com.tidytray.desktop, settings folder, UI brand, tray); README and changelog prepared; **v1.0.0 released** from the tag-triggered workflow (run 42976799959) with exactly TidyTray-v1.0.0-x64-Setup.exe + TidyTray-v1.0.0-x64-Portable.zip + SHA256SUMS.txt, re-downloaded and hash-verified; portable zip contains TidyTray.exe + LICENSE |
 
+## Post-release review batches B & C (2026-11-11, v1.1.0)
+
+- **Critical fix:** the Tweaks and Apps screens referenced two
+  environment flags (`IN_TAURI` / `hasTauri`) that were never defined,
+  so in v1.0.0 those screens silently stayed on their preview data and
+  their actions did nothing; the theme choice also failed to persist.
+  The flags are now defined and every call site works as designed.
+- **Batch B:** all switches are real buttons (`role="switch"`,
+  keyboard-operable, focus-visible); Safety-screen actions report
+  failures inline instead of alert boxes or silence; UI refresh and
+  the process sampler slow down while the window is hidden in the
+  tray; the scheduled task re-points itself if the executable moved;
+  settings that previously had no surface (start minimized, scan on
+  launch, temp-file age, large-file threshold, the safe list) are
+  editable on the Cleanup screen; headless CLI modes attach to the
+  parent console so their output is visible from a terminal.
+- **Batch C:** the low-disk trigger is implemented (above);
+  single-instance is enforced with a hand-rolled named mutex (no new
+  dependency); the removal catalog grows from 26 to 62 verified
+  entries with conservative risk badges; system repair (SFC and DISM,
+  §6.2) is implemented as a fixed two-action catalog with the same
+  validated elevated-helper discipline as the other Tier 2 surfaces;
+  QUALITY.md is adopted (repo root) and scored from evidence.
+
 ## Post-release review fixes (2026-11-11)
 A senior-review pass over the v1.0.0 tree produced a batch of fixes with no
 intended behaviour change (full report kept with the project records):
@@ -63,8 +87,8 @@ audit-logged; the manifest checksum uses explicit canonical JSON.
   unverified: the installer run itself, a real (non-dry) clean and
   quarantine restore, tweak undo, app removal and its undo, winget
   installs from the catalog, and autonomous scheduled firing.
-- The blueprint's low-disk run trigger (§8) is not implemented: the
-  `low_disk_trigger_gb` config field exists but nothing reads it yet.
+- ~~The blueprint's low-disk run trigger (§8) is not implemented~~ —
+  implemented in v1.1.0 (see the Post-release review section below).
   Implement-or-remove is an open decision (BLUEPRINT.md §16 note).
 - QUALITY.md scorecard was planned for the first release gate (M6) and
   has not been introduced yet.
