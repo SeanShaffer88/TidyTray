@@ -203,6 +203,10 @@ fn main() {
             commands::safety_set_categories,
             commands::safety_restore,
             commands::safety_purge_quarantine,
+            commands::safety_recent_runs,
+            commands::safety_quarantine_list,
+            commands::safety_open_logs,
+            commands::safety_set_pauses,
             commands::check_path,
         ])
         .run(tauri::generate_context!())

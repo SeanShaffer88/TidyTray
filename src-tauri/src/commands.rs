@@ -246,6 +246,8 @@ pub struct SafetyStatus {
     pub schedule_hour: u32,
     pub last_run: Option<crate::safety::LastRun>,
     pub preflight: crate::preflight::Facts,
+    pub pause_on_fullscreen: bool,
+    pub battery_pause_below_pct: u32,
 }
 
 #[tauri::command]
@@ -279,6 +281,8 @@ pub fn safety_status(state: tauri::State<'_, crate::safety::SafetyRuntime>) -> T
         schedule_hour: cfg.autonomous.schedule.hour,
         last_run: crate::safety::read_last_run(),
         preflight: crate::preflight::collect(),
+        pause_on_fullscreen: cfg.autonomous.pause_on_fullscreen,
+        battery_pause_below_pct: cfg.autonomous.pause_on_battery_below_pct,
     })
 }
 
@@ -389,4 +393,40 @@ pub fn safety_purge_quarantine() -> TidyResult<u64> {
     let log = crate::audit::AuditLog::new(crate::appconfig::logs_dir());
     let _ = log.append(&crate::audit::LogEntry::new("manual", "quarantine_purge").size(freed).result("manual"));
     Ok(freed)
+}
+
+/// Recent safety run attempts, newest first (Safety screen).
+#[tauri::command]
+pub fn safety_recent_runs(limit: Option<u32>) -> Vec<crate::safety::LastRun> {
+    crate::safety::recent_runs(limit.unwrap_or(8) as usize)
+}
+
+/// Everything currently held in quarantine (Safety screen review list).
+#[tauri::command]
+pub fn safety_quarantine_list() -> Vec<crate::quarantine::QuarantineEntry> {
+    crate::quarantine::Quarantine::new(crate::appconfig::quarantine_dir()).entries()
+}
+
+/// Opens the audit-log folder in Explorer.
+#[tauri::command]
+pub fn safety_open_logs() -> TidyResult<()> {
+    let dir = crate::appconfig::logs_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| TidyError::Other(e.to_string()))?;
+    std::process::Command::new("explorer")
+        .arg(&dir)
+        .spawn()
+        .map_err(|e| TidyError::Other(e.to_string()))?;
+    Ok(())
+}
+
+/// Sets the pre-flight pause preferences: fullscreen pause on/off and the
+/// battery pause threshold (0 = never pause for battery).
+#[tauri::command]
+pub fn safety_set_pauses(pause_on_fullscreen: bool, battery_pause_below_pct: u32) -> TidyResult<()> {
+    let cfg_path = crate::appconfig::config_path();
+    let mut cfg = crate::appconfig::AppConfig::load_from(&cfg_path);
+    cfg.autonomous.pause_on_fullscreen = pause_on_fullscreen;
+    cfg.autonomous.pause_on_battery_below_pct = battery_pause_below_pct.min(100);
+    cfg.save_to(&cfg_path).map_err(|e| TidyError::Other(e.to_string()))?;
+    Ok(())
 }

@@ -76,6 +76,38 @@ fn write_last_run(lr: &LastRun) {
     if let Ok(text) = serde_json::to_string_pretty(lr) {
         let _ = std::fs::write(last_run_path(), text);
     }
+    append_history(lr);
+}
+
+fn history_path() -> std::path::PathBuf {
+    appconfig::data_dir().join("runs.json")
+}
+
+fn append_history(lr: &LastRun) {
+    let mut runs = read_history();
+    runs.push(lr.clone());
+    if runs.len() > 50 {
+        let excess = runs.len() - 50;
+        runs.drain(..excess);
+    }
+    if let Ok(text) = serde_json::to_string_pretty(&runs) {
+        let _ = std::fs::write(history_path(), text);
+    }
+}
+
+fn read_history() -> Vec<LastRun> {
+    std::fs::read_to_string(history_path())
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default()
+}
+
+/// Most recent run attempts, newest first (for the Safety screen).
+pub fn recent_runs(limit: usize) -> Vec<LastRun> {
+    let mut runs = read_history();
+    runs.reverse();
+    runs.truncate(limit);
+    runs
 }
 
 fn record(
