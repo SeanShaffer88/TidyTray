@@ -11,6 +11,7 @@ mod manifest;
 mod preflight;
 mod quarantine;
 mod runlock;
+mod repair;
 mod safety;
 mod scheduler;
 #[cfg(test)]
@@ -124,6 +125,38 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
+/// Low-disk trigger (blueprint section 8): when autonomous cleanup is
+/// enabled and free space is below the configured threshold, start a
+/// gated run (the run itself still passes the pre-flight gate and the
+/// dry-run phase). Edge-triggered with hysteresis: it will not fire
+/// again until space recovers above the threshold plus 1 GB.
+fn check_low_disk_trigger(app: &AppHandle) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static LATCH: AtomicBool = AtomicBool::new(false);
+    let cfg = appconfig::AppConfig::load_from(&appconfig::config_path());
+    if !cfg.autonomous.enabled {
+        return;
+    }
+    let threshold = cfg.autonomous.low_disk_trigger_gb;
+    let facts = preflight::collect();
+    if safety::low_disk_due(facts.free_space_gb, threshold) {
+        if !LATCH.swap(true, Ordering::Relaxed) {
+            let handle = app.clone();
+            std::thread::spawn(move || {
+                let state = handle.state::<safety::SafetyRuntime>();
+                let runtime = safety::SafetyRuntime {
+                    cancel: state.cancel.clone(),
+                    running: state.running.clone(),
+                };
+                let _ = safety::run_safety_once(&runtime, true, "low-disk");
+                refresh_safety_status_item();
+            });
+        }
+    } else if facts.free_space_gb > threshold as f64 + 1.0 {
+        LATCH.store(false, Ordering::Relaxed);
+    }
+}
+
 /// Samples CPU per process once a second (sparklines) and refreshes the tray tooltip.
 fn spawn_sampler(app: AppHandle) {
     std::thread::Builder::new()
@@ -132,7 +165,22 @@ fn spawn_sampler(app: AppHandle) {
             let mut tick: u64 = 0;
             loop {
                 let state = app.state::<AppState>();
+                // While the window is hidden in the tray, sample at
+                // a tenth of the rate: a resident utility should cost
+                // almost nothing when nobody is looking at it.
+                let hidden = app
+                    .get_webview_window("main")
+                    .map(|w| !w.is_visible().unwrap_or(true))
+                    .unwrap_or(false);
+                if hidden && !tick.is_multiple_of(10) {
+                    tick += 1;
+                    std::thread::sleep(Duration::from_secs(1));
+                    continue;
+                }
                 state.sample();
+                if tick.is_multiple_of(60) {
+                    check_low_disk_trigger(&app);
+                }
                 if tick.is_multiple_of(15) {
                     if let (Some(tray), Ok(sys)) = (app.tray_by_id("tidy-tray"), state.sys.lock()) {
                         let _ = tray.set_tooltip(Some(health::tray_summary(&sys)));
@@ -145,10 +193,62 @@ fn spawn_sampler(app: AppHandle) {
         .expect("failed to start sampler thread");
 }
 
+/// The release binary is a GUI-subsystem process, which Windows does
+/// not give a console by default — without this, the headless CLI
+/// modes would print nothing when run from PowerShell or cmd.
+#[cfg(windows)]
+fn attach_parent_console() {
+    use windows_sys::Win32::System::Console::{AttachConsole, ATTACH_PARENT_PROCESS};
+    unsafe {
+        AttachConsole(ATTACH_PARENT_PROCESS);
+    }
+}
+
+/// Hand-rolled single-instance guard (no plugin): a named mutex held
+/// for the process lifetime. Returns false when another TidyTray GUI
+/// process already holds it.
+#[cfg(windows)]
+fn acquire_single_instance() -> bool {
+    use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS};
+    use windows_sys::Win32::System::Threading::CreateMutexW;
+    let name: Vec<u16> = "TidyTraySingleInstance\0".encode_utf16().collect();
+    let handle = unsafe { CreateMutexW(std::ptr::null(), 1, name.as_ptr()) };
+    if handle.is_null() {
+        return true; // cannot tell — never block startup on the guard itself
+    }
+    if unsafe { GetLastError() } == ERROR_ALREADY_EXISTS {
+        unsafe { CloseHandle(handle) };
+        return false;
+    }
+    let _ = handle; // never closed: the mutex lives as long as the process
+    true
+}
+
+#[cfg(windows)]
+fn show_already_running() {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONINFORMATION, MB_OK};
+    let text: Vec<u16> = "TidyTray is already running — look for its icon in the system tray.\0"
+        .encode_utf16()
+        .collect();
+    let caption: Vec<u16> = "TidyTray\0".encode_utf16().collect();
+    unsafe {
+        MessageBoxW(
+            std::ptr::null_mut(),
+            text.as_ptr(),
+            caption.as_ptr(),
+            MB_OK | MB_ICONINFORMATION,
+        );
+    }
+}
+
 fn main() {
     // Headless entry points (full CLI parity): the Task Scheduler task and
     // scripts use these; they never open a window.
     let args: Vec<String> = std::env::args().skip(1).collect();
+    #[cfg(windows)]
+    if args.iter().any(|a| a.starts_with("--")) {
+        attach_parent_console();
+    }
     if args.iter().any(|a| a == "--autonomous-run") {
         std::process::exit(safety::headless_autonomous_run());
     }
@@ -204,6 +304,24 @@ fn main() {
             .unwrap_or(3);
         std::process::exit(code);
     }
+    if let Some(pos) = args.iter().position(|a| a == "--repair-elevated") {
+        // Elevated helper for system repair (SFC / DISM).
+        let code = args
+            .get(pos + 1)
+            .map(|p| repair::run_repair_helper(std::path::Path::new(p)))
+            .unwrap_or(3);
+        std::process::exit(code);
+    }
+    if let Some(pos) = args.iter().position(|a| a == "--repair") {
+        let action = args.get(pos + 1).cloned().unwrap_or_default();
+        let outcome = repair::run_repair(&appconfig::data_dir(), &appconfig::logs_dir(), &action);
+        println!("{}", serde_json::to_string_pretty(&outcome).unwrap_or_default());
+        std::process::exit(if outcome.ok { 0 } else { 2 });
+    }
+    if args.iter().any(|a| a == "--repair-list") {
+        println!("{}", serde_json::to_string_pretty(&repair::action_states()).unwrap_or_default());
+        return;
+    }
     if args.iter().any(|a| a == "--tweaks") {
         let store = tier2::system_store();
         let states = tier2::list_states(&store);
@@ -244,12 +362,23 @@ fn main() {
         println!("{}", serde_json::to_string_pretty(&snapshot).unwrap_or_default());
         return;
     }
+    #[cfg(windows)]
+    if !acquire_single_instance() {
+        show_already_running();
+        return;
+    }
     tauri::Builder::default()
         .manage(AppState::new())
         .manage(safety::SafetyRuntime::new())
         .setup(|app| {
             build_tray(app)?;
             spawn_sampler(app.handle().clone());
+            std::thread::spawn(|| {
+                let cfg = appconfig::AppConfig::load_from(&appconfig::config_path());
+                if cfg.autonomous.enabled && scheduler::is_installed() {
+                    scheduler::heal_if_moved(&cfg.autonomous.schedule);
+                }
+            });
             let settings = app.state::<AppState>().settings();
             if settings.start_minimized {
                 if let Some(win) = app.get_webview_window("main") {
@@ -301,6 +430,8 @@ fn main() {
             commands::apps_profiles,
             commands::apps_save_profile,
             commands::apps_delete_profile,
+            commands::repair_list,
+            commands::repair_run,
             commands::check_path,
         ])
         .run(tauri::generate_context!())

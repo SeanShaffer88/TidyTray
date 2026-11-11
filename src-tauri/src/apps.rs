@@ -206,6 +206,227 @@ static REMOVAL_CATALOG: &[AppEntry] = &[
         risk: Risk::Advanced,
         reinstall: Reinstall::Manual,
     },
+    // --- Catalog growth (2026-11-11 review, Batch C): well-known
+    // inbox and preload packages. Badges stay conservative: anything
+    // holding user content or feeding a device feature is Caution or
+    // Advanced, and only Store reinstalls are claimed where the Store
+    // listing is the reliable route back.
+    AppEntry {
+        display: "Candy Crush Friends Saga",
+        package: "king.com.CandyCrushFriendsSaga",
+        risk: Risk::Safe,
+        reinstall: Reinstall::Store,
+    },
+    AppEntry {
+        display: "Bubble Witch 3 Saga",
+        package: "king.com.BubbleWitch3Saga",
+        risk: Risk::Safe,
+        reinstall: Reinstall::Store,
+    },
+    AppEntry {
+        display: "Microsoft Mahjong",
+        package: "Microsoft.MicrosoftMahjong",
+        risk: Risk::Safe,
+        reinstall: Reinstall::Store,
+    },
+    AppEntry {
+        display: "Microsoft Jigsaw",
+        package: "Microsoft.MicrosoftJigsaw",
+        risk: Risk::Safe,
+        reinstall: Reinstall::Store,
+    },
+    AppEntry {
+        display: "Netflix (preinstalled)",
+        package: "4DF9E0F8.Netflix",
+        risk: Risk::Safe,
+        reinstall: Reinstall::Store,
+    },
+    AppEntry {
+        display: "Office (Microsoft 365 hub)",
+        package: "Microsoft.MicrosoftOfficeHub",
+        risk: Risk::Safe,
+        reinstall: Reinstall::Store,
+    },
+    AppEntry {
+        display: "Mobile Plans",
+        package: "Microsoft.OneConnect",
+        risk: Risk::Safe,
+        reinstall: Reinstall::Store,
+    },
+    AppEntry {
+        display: "Print 3D",
+        package: "Microsoft.Print3D",
+        risk: Risk::Safe,
+        reinstall: Reinstall::Store,
+    },
+    AppEntry {
+        display: "Paint 3D",
+        package: "Microsoft.MSPaint",
+        risk: Risk::Safe,
+        reinstall: Reinstall::Store,
+    },
+    AppEntry {
+        display: "3D Viewer",
+        package: "Microsoft.Microsoft3DViewer",
+        risk: Risk::Safe,
+        reinstall: Reinstall::Store,
+    },
+    AppEntry {
+        display: "Sound Recorder",
+        package: "Microsoft.WindowsSoundRecorder",
+        risk: Risk::Safe,
+        reinstall: Reinstall::Store,
+    },
+    AppEntry {
+        display: "Alarms & Clock",
+        package: "Microsoft.WindowsAlarms",
+        risk: Risk::Safe,
+        reinstall: Reinstall::Store,
+    },
+    AppEntry {
+        display: "Microsoft Wallet",
+        package: "Microsoft.Wallet",
+        risk: Risk::Safe,
+        reinstall: Reinstall::Store,
+    },
+    AppEntry {
+        display: "Dev Home",
+        package: "Microsoft.Windows.DevHome",
+        risk: Risk::Safe,
+        reinstall: Reinstall::Store,
+    },
+    AppEntry {
+        display: "PC Manager",
+        package: "Microsoft.MicrosoftPCManager",
+        risk: Risk::Safe,
+        reinstall: Reinstall::Store,
+    },
+    AppEntry {
+        display: "Dolby Access (preinstalled)",
+        package: "DolbyLaboratories.DolbyAccess",
+        risk: Risk::Safe,
+        reinstall: Reinstall::Store,
+    },
+    AppEntry {
+        display: "Start Experiences",
+        package: "Microsoft.StartExperiencesApp",
+        risk: Risk::Safe,
+        reinstall: Reinstall::Store,
+    },
+    AppEntry {
+        display: "Xbox Game Overlay",
+        package: "Microsoft.XboxGameOverlay",
+        risk: Risk::Safe,
+        reinstall: Reinstall::Store,
+    },
+    AppEntry {
+        display: "Xbox Speech to Text Overlay",
+        package: "Microsoft.XboxSpeechToTextOverlay",
+        risk: Risk::Safe,
+        reinstall: Reinstall::Store,
+    },
+    AppEntry {
+        display: "OneNote",
+        package: "Microsoft.Office.OneNote",
+        risk: Risk::Caution,
+        reinstall: Reinstall::Store,
+    },
+    AppEntry {
+        display: "Camera",
+        package: "Microsoft.WindowsCamera",
+        risk: Risk::Caution,
+        reinstall: Reinstall::Store,
+    },
+    AppEntry {
+        display: "Photos",
+        package: "Microsoft.Windows.Photos",
+        risk: Risk::Caution,
+        reinstall: Reinstall::Store,
+    },
+    AppEntry {
+        display: "Outlook (new)",
+        package: "Microsoft.OutlookForWindows",
+        risk: Risk::Caution,
+        reinstall: Reinstall::Store,
+    },
+    AppEntry {
+        display: "Teams",
+        package: "MSTeams",
+        risk: Risk::Caution,
+        reinstall: Reinstall::Store,
+    },
+    AppEntry {
+        display: "Power Automate",
+        package: "Microsoft.PowerAutomateDesktop",
+        risk: Risk::Caution,
+        reinstall: Reinstall::Store,
+    },
+    AppEntry {
+        display: "Quick Assist",
+        package: "MicrosoftCorporationII.QuickAssist",
+        risk: Risk::Caution,
+        reinstall: Reinstall::Store,
+    },
+    AppEntry {
+        display: "Xbox Identity Provider",
+        package: "Microsoft.XboxIdentityProvider",
+        risk: Risk::Caution,
+        reinstall: Reinstall::Store,
+    },
+    AppEntry {
+        display: "Minecraft for Windows",
+        package: "Microsoft.MinecraftUWP",
+        risk: Risk::Caution,
+        reinstall: Reinstall::Store,
+    },
+    AppEntry {
+        display: "Realtek Audio Control",
+        package: "RealtekSemiconductorCorp.RealtekAudioControl",
+        risk: Risk::Caution,
+        reinstall: Reinstall::Store,
+    },
+    AppEntry {
+        display: "Take a Test",
+        package: "Microsoft.Windows.SecureAssessmentBrowser",
+        risk: Risk::Caution,
+        reinstall: Reinstall::Store,
+    },
+    AppEntry {
+        display: "VP9 Video Extensions",
+        package: "Microsoft.VP9VideoExtensions",
+        risk: Risk::Caution,
+        reinstall: Reinstall::Store,
+    },
+    AppEntry {
+        display: "HEIF Image Extensions",
+        package: "Microsoft.HEIFImageExtension",
+        risk: Risk::Advanced,
+        reinstall: Reinstall::Store,
+    },
+    AppEntry {
+        display: "Windows Web Experience Pack (Widgets platform)",
+        package: "MicrosoftWindows.Client.WebExperience",
+        risk: Risk::Advanced,
+        reinstall: Reinstall::Store,
+    },
+    AppEntry {
+        display: "Gaming Services",
+        package: "Microsoft.GamingServices",
+        risk: Risk::Advanced,
+        reinstall: Reinstall::Store,
+    },
+    AppEntry {
+        display: "Store Purchase App",
+        package: "Microsoft.StorePurchaseApp",
+        risk: Risk::Advanced,
+        reinstall: Reinstall::Store,
+    },
+    AppEntry {
+        display: "App Installer (winget)",
+        package: "Microsoft.DesktopAppInstaller",
+        risk: Risk::Advanced,
+        reinstall: Reinstall::Manual,
+    },
 ];
 
 pub fn removal_catalog() -> &'static [AppEntry] {
