@@ -1,6 +1,6 @@
 [package]
 name = "tidy"
-version = "1.0.0"
+version = "1.1.0"
 description = "TidyTray - open source PC cleanup and health monitor for Windows"
 authors = ["Tidy contributors"]
 license = "MIT"
@@ -27,6 +27,7 @@ windows-sys = { version = "0.59", features = [
   "Win32_Networking_WinSock",
   "Win32_Storage_FileSystem",
   "Win32_System_Performance",
+  "Win32_System_Console",
   "Win32_System_Threading",
   "Win32_System_Power",
   "Win32_System_ProcessStatus",
