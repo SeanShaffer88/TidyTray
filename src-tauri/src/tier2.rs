@@ -43,12 +43,97 @@ impl Hive {
     }
 }
 
+/// A registry value Tier 2 can read and write: a DWORD or a string
+/// (REG_SZ). Serialized in helper batches and undo files in tagged
+/// form (`{"dword": 5}` / `{"text": "Deny"}`); the deserializer also
+/// accepts the bare numbers undo files written before string support
+/// carried, so old undo records stay readable.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum OpVal {
+    Dword(u32),
+    Text(String),
+}
+
+fn opval_from_json(v: serde_json::Value) -> Result<OpVal, String> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    enum Tagged {
+        Dword(u32),
+        Text(String),
+    }
+    match v {
+        serde_json::Value::Number(n) => n
+            .as_u64()
+            .and_then(|x| u32::try_from(x).ok())
+            .map(OpVal::Dword)
+            .ok_or_else(|| "registry DWORD out of range".to_string()),
+        other => match serde_json::from_value::<Tagged>(other) {
+            Ok(Tagged::Dword(d)) => Ok(OpVal::Dword(d)),
+            Ok(Tagged::Text(t)) => Ok(OpVal::Text(t)),
+            Err(e) => Err(e.to_string()),
+        },
+    }
+}
+
+impl<'de> Deserialize<'de> for OpVal {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let v = serde_json::Value::deserialize(deserializer)?;
+        opval_from_json(v).map_err(serde::de::Error::custom)
+    }
+}
+
+fn de_opt_opval<'de, D>(deserializer: D) -> Result<Option<OpVal>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    match Option::<serde_json::Value>::deserialize(deserializer)? {
+        None | Some(serde_json::Value::Null) => Ok(None),
+        Some(v) => opval_from_json(v)
+            .map(Some)
+            .map_err(serde::de::Error::custom),
+    }
+}
+
+/// A catalog-side value: the compile-time form of [`OpVal`] that can
+/// live in the static toggle catalog.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpSpec {
+    Dword(u32),
+    Text(&'static str),
+}
+
+impl OpSpec {
+    pub fn to_val(self) -> OpVal {
+        match self {
+            OpSpec::Dword(v) => OpVal::Dword(v),
+            OpSpec::Text(t) => OpVal::Text(t.to_string()),
+        }
+    }
+}
+
 /// The three registry operations Tier 2 needs. The real implementation is
 /// backed by `winreg`; tests use an in-memory fake.
 pub trait RegStore {
     fn get_dword(&self, hive: Hive, key: &str, name: &str) -> Option<u32>;
     fn set_dword(&self, hive: Hive, key: &str, name: &str, value: u32) -> std::io::Result<()>;
     fn delete_value(&self, hive: Hive, key: &str, name: &str) -> std::io::Result<()>;
+    /// String (REG_SZ) reads. The default store cannot provide them;
+    /// the real store and the test fake override both methods.
+    fn get_text(&self, hive: Hive, key: &str, name: &str) -> Option<String> {
+        let _ = (hive, key, name);
+        None
+    }
+    fn set_text(&self, hive: Hive, key: &str, name: &str, value: &str) -> std::io::Result<()> {
+        let _ = (hive, key, name, value);
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "text values are not supported by this store",
+        ))
+    }
 }
 
 /// Real registry access (Windows). Reads and HKCU writes work unelevated;
@@ -80,6 +165,18 @@ impl RegStore for WinRegStore {
         key.set_value(name, &value)
     }
 
+    fn get_text(&self, hive: Hive, key: &str, name: &str) -> Option<String> {
+        let key = Self::root(hive)
+            .open_subkey_with_flags(key, winreg::enums::KEY_READ)
+            .ok()?;
+        key.get_value::<String, _>(name).ok()
+    }
+
+    fn set_text(&self, hive: Hive, key: &str, name: &str, value: &str) -> std::io::Result<()> {
+        let (key, _) = Self::root(hive).create_subkey(key)?;
+        key.set_value(name, &value)
+    }
+
     fn delete_value(&self, hive: Hive, key: &str, name: &str) -> std::io::Result<()> {
         let key = Self::root(hive).open_subkey_with_flags(key, winreg::enums::KEY_SET_VALUE)?;
         key.delete_value(name)
@@ -103,22 +200,46 @@ pub fn system_store() -> FakeStore {
 #[cfg(any(test, not(windows)))]
 #[derive(Debug, Default)]
 pub struct FakeStore {
-    values: std::cell::RefCell<std::collections::BTreeMap<(Hive, String, String), u32>>,
+    values: std::cell::RefCell<std::collections::BTreeMap<(Hive, String, String), OpVal>>,
 }
 
 #[cfg(any(test, not(windows)))]
 impl RegStore for FakeStore {
     fn get_dword(&self, hive: Hive, key: &str, name: &str) -> Option<u32> {
-        self.values
+        match self
+            .values
             .borrow()
             .get(&(hive, key.to_string(), name.to_string()))
-            .copied()
+        {
+            Some(OpVal::Dword(v)) => Some(*v),
+            _ => None,
+        }
     }
 
     fn set_dword(&self, hive: Hive, key: &str, name: &str, value: u32) -> std::io::Result<()> {
-        self.values
-            .borrow_mut()
-            .insert((hive, key.to_string(), name.to_string()), value);
+        self.values.borrow_mut().insert(
+            (hive, key.to_string(), name.to_string()),
+            OpVal::Dword(value),
+        );
+        Ok(())
+    }
+
+    fn get_text(&self, hive: Hive, key: &str, name: &str) -> Option<String> {
+        match self
+            .values
+            .borrow()
+            .get(&(hive, key.to_string(), name.to_string()))
+        {
+            Some(OpVal::Text(t)) => Some(t.clone()),
+            _ => None,
+        }
+    }
+
+    fn set_text(&self, hive: Hive, key: &str, name: &str, value: &str) -> std::io::Result<()> {
+        self.values.borrow_mut().insert(
+            (hive, key.to_string(), name.to_string()),
+            OpVal::Text(value.to_string()),
+        );
         Ok(())
     }
 
@@ -143,8 +264,8 @@ pub struct RegOp {
     pub hive: Hive,
     pub key: &'static str,
     pub name: &'static str,
-    pub applied: u32,
-    pub default: Option<u32>,
+    pub applied: OpSpec,
+    pub default: Option<OpSpec>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -181,7 +302,7 @@ static CATALOG: &[ToggleDef] = &[
             hive: Hive::Hklm,
             key: r"SOFTWARE\Policies\Microsoft\Windows\DataCollection",
             name: "AllowTelemetry",
-            applied: 1,
+            applied: OpSpec::Dword(1),
             default: None,
         }],
     },
@@ -197,8 +318,8 @@ static CATALOG: &[ToggleDef] = &[
             hive: Hive::Hkcu,
             key: r"SOFTWARE\Microsoft\Windows\CurrentVersion\AdvertisingInfo",
             name: "Enabled",
-            applied: 0,
-            default: Some(1),
+            applied: OpSpec::Dword(0),
+            default: Some(OpSpec::Dword(1)),
         }],
     },
     ToggleDef {
@@ -214,14 +335,14 @@ static CATALOG: &[ToggleDef] = &[
                 hive: Hive::Hklm,
                 key: r"SOFTWARE\Policies\Microsoft\Windows\System",
                 name: "EnableActivityFeed",
-                applied: 0,
+                applied: OpSpec::Dword(0),
                 default: None,
             },
             RegOp {
                 hive: Hive::Hklm,
                 key: r"SOFTWARE\Policies\Microsoft\Windows\System",
                 name: "PublishUserActivities",
-                applied: 0,
+                applied: OpSpec::Dword(0),
                 default: None,
             },
         ],
@@ -238,7 +359,7 @@ static CATALOG: &[ToggleDef] = &[
             hive: Hive::Hkcu,
             key: r"SOFTWARE\Policies\Microsoft\Windows\CloudContent",
             name: "DisableTailoredExperiencesWithDiagnosticData",
-            applied: 1,
+            applied: OpSpec::Dword(1),
             default: None,
         }],
     },
@@ -255,15 +376,15 @@ static CATALOG: &[ToggleDef] = &[
                 hive: Hive::Hkcu,
                 key: r"SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot",
                 name: "TurnOffWindowsCopilot",
-                applied: 1,
+                applied: OpSpec::Dword(1),
                 default: None,
             },
             RegOp {
                 hive: Hive::Hkcu,
                 key: EXPLORER_ADV,
                 name: "ShowCopilotButton",
-                applied: 0,
-                default: Some(1),
+                applied: OpSpec::Dword(0),
+                default: Some(OpSpec::Dword(1)),
             },
         ],
     },
@@ -279,8 +400,8 @@ static CATALOG: &[ToggleDef] = &[
             hive: Hive::Hkcu,
             key: EXPLORER_ADV,
             name: "TaskbarDa",
-            applied: 0,
-            default: Some(1),
+            applied: OpSpec::Dword(0),
+            default: Some(OpSpec::Dword(1)),
         }],
     },
     ToggleDef {
@@ -295,8 +416,8 @@ static CATALOG: &[ToggleDef] = &[
             hive: Hive::Hkcu,
             key: r"SOFTWARE\Microsoft\Windows\CurrentVersion\SearchSettings",
             name: "IsDynamicSearchBoxEnabled",
-            applied: 0,
-            default: Some(1),
+            applied: OpSpec::Dword(0),
+            default: Some(OpSpec::Dword(1)),
         }],
     },
     ToggleDef {
@@ -311,8 +432,8 @@ static CATALOG: &[ToggleDef] = &[
             hive: Hive::Hkcu,
             key: EXPLORER_ADV,
             name: "HideFileExt",
-            applied: 0,
-            default: Some(1),
+            applied: OpSpec::Dword(0),
+            default: Some(OpSpec::Dword(1)),
         }],
     },
     ToggleDef {
@@ -327,8 +448,8 @@ static CATALOG: &[ToggleDef] = &[
             hive: Hive::Hkcu,
             key: EXPLORER_ADV,
             name: "TaskbarMn",
-            applied: 0,
-            default: Some(1),
+            applied: OpSpec::Dword(0),
+            default: Some(OpSpec::Dword(1)),
         }],
     },
     ToggleDef {
@@ -343,8 +464,369 @@ static CATALOG: &[ToggleDef] = &[
             hive: Hive::Hklm,
             key: r"SYSTEM\CurrentControlSet\Control\FileSystem",
             name: "LongPathsEnabled",
-            applied: 1,
-            default: Some(0),
+            applied: OpSpec::Dword(1),
+            default: Some(OpSpec::Dword(0)),
+        }],
+    },
+    ToggleDef {
+        id: "app_launch_tracking_off",
+        title: "App launch tracking",
+        desc: "Stops Windows tracking which apps you launch to personalize the Start menu.",
+        group: "Privacy",
+        recommended: true,
+        on_label: "Off",
+        off_label: "On (default)",
+        ops: &[RegOp {
+            hive: Hive::Hkcu,
+            key: EXPLORER_ADV,
+            name: "Start_TrackProgs",
+            applied: OpSpec::Dword(0),
+            default: None,
+        }],
+    },
+    ToggleDef {
+        id: "wer_off",
+        title: "Error reporting",
+        desc: "Stops Windows Error Reporting from sending crash and error reports to Microsoft.",
+        group: "Privacy",
+        recommended: false,
+        on_label: "Off",
+        off_label: "On (default)",
+        ops: &[RegOp {
+            hive: Hive::Hkcu,
+            key: r"SOFTWARE\Microsoft\Windows\Windows Error Reporting",
+            name: "Disabled",
+            applied: OpSpec::Dword(1),
+            default: None,
+        }],
+    },
+    ToggleDef {
+        id: "feedback_off",
+        title: "Feedback requests",
+        desc: "Stops Windows asking for feedback and showing rating prompts.",
+        group: "Privacy",
+        recommended: true,
+        on_label: "Off",
+        off_label: "On (default)",
+        ops: &[RegOp {
+            hive: Hive::Hkcu,
+            key: r"SOFTWARE\Microsoft\Siuf\Rules",
+            name: "NumberOfSIUFInPeriod",
+            applied: OpSpec::Dword(0),
+            default: None,
+        }],
+    },
+    ToggleDef {
+        id: "online_speech_off",
+        title: "Online speech recognition",
+        desc: "Turns off cloud-based speech recognition. Offline dictation is unaffected.",
+        group: "Privacy",
+        recommended: false,
+        on_label: "Off",
+        off_label: "On (default)",
+        ops: &[RegOp {
+            hive: Hive::Hkcu,
+            key: r"SOFTWARE\Microsoft\Speech_OneCore\Settings\OnlineSpeechPrivacy",
+            name: "HasAccepted",
+            applied: OpSpec::Dword(0),
+            default: None,
+        }],
+    },
+    ToggleDef {
+        id: "typing_personalization_off",
+        title: "Typing & inking personalization",
+        desc: "Stops Windows collecting typing and handwriting samples to improve prediction.",
+        group: "Privacy",
+        recommended: true,
+        on_label: "Off",
+        off_label: "On (default)",
+        ops: &[
+            RegOp {
+                hive: Hive::Hkcu,
+                key: r"SOFTWARE\Microsoft\InputPersonalization",
+                name: "RestrictImplicitTextCollection",
+                applied: OpSpec::Dword(1),
+                default: None,
+            },
+            RegOp {
+                hive: Hive::Hkcu,
+                key: r"SOFTWARE\Microsoft\InputPersonalization",
+                name: "RestrictImplicitInkCollection",
+                applied: OpSpec::Dword(1),
+                default: None,
+            },
+        ],
+    },
+    ToggleDef {
+        id: "clipboard_history_off",
+        title: "Clipboard history",
+        desc: "Turns off clipboard history, so copied items are not kept in a list.",
+        group: "Privacy",
+        recommended: false,
+        on_label: "Off",
+        off_label: "On (default)",
+        ops: &[RegOp {
+            hive: Hive::Hklm,
+            key: r"SOFTWARE\Policies\Microsoft\Windows\System",
+            name: "AllowClipboardHistory",
+            applied: OpSpec::Dword(0),
+            default: None,
+        }],
+    },
+    ToggleDef {
+        id: "clipboard_cloud_off",
+        title: "Clipboard cloud sync",
+        desc: "Stops your clipboard syncing to your other devices through the cloud.",
+        group: "Privacy",
+        recommended: false,
+        on_label: "Off",
+        off_label: "On (default)",
+        ops: &[RegOp {
+            hive: Hive::Hklm,
+            key: r"SOFTWARE\Policies\Microsoft\Windows\System",
+            name: "AllowCrossDeviceClipboard",
+            applied: OpSpec::Dword(0),
+            default: None,
+        }],
+    },
+    ToggleDef {
+        id: "consumer_features_off",
+        title: "Suggested & sponsored apps",
+        desc: "Stops Windows automatically installing suggested and sponsored apps.",
+        group: "Debloat",
+        recommended: true,
+        on_label: "Blocked",
+        off_label: "Allowed (default)",
+        ops: &[RegOp {
+            hive: Hive::Hklm,
+            key: r"SOFTWARE\Policies\Microsoft\Windows\CloudContent",
+            name: "DisableWindowsConsumerFeatures",
+            applied: OpSpec::Dword(1),
+            default: None,
+        }],
+    },
+    ToggleDef {
+        id: "aero_shake_off",
+        title: "Aero Shake",
+        desc: "Stops other windows minimizing when you shake one by its title bar.",
+        group: "Explorer & taskbar",
+        recommended: false,
+        on_label: "Off",
+        off_label: "On (default)",
+        ops: &[RegOp {
+            hive: Hive::Hkcu,
+            key: EXPLORER_ADV,
+            name: "DisallowShaking",
+            applied: OpSpec::Dword(1),
+            default: None,
+        }],
+    },
+    ToggleDef {
+        id: "verbose_logon_on",
+        title: "Detailed sign-in messages",
+        desc: "Shows detailed status messages during sign-in, sign-out and shutdown.",
+        group: "System",
+        recommended: false,
+        on_label: "On",
+        off_label: "Off (default)",
+        ops: &[RegOp {
+            hive: Hive::Hklm,
+            key: r"SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System",
+            name: "VerboseStatus",
+            applied: OpSpec::Dword(1),
+            default: None,
+        }],
+    },
+    ToggleDef {
+        id: "perm_camera",
+        title: "Camera access",
+        desc: "Stops apps from using your camera.",
+        group: "App permissions",
+        recommended: false,
+        on_label: "Denied for apps",
+        off_label: "Apps can ask",
+        ops: &[RegOp {
+            hive: Hive::Hklm,
+            key: r"SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\webcam",
+            name: "Value",
+            applied: OpSpec::Text("Deny"),
+            default: None,
+        }],
+    },
+    ToggleDef {
+        id: "perm_microphone",
+        title: "Microphone access",
+        desc: "Stops apps from using your microphone.",
+        group: "App permissions",
+        recommended: false,
+        on_label: "Denied for apps",
+        off_label: "Apps can ask",
+        ops: &[RegOp {
+            hive: Hive::Hklm,
+            key: r"SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone",
+            name: "Value",
+            applied: OpSpec::Text("Deny"),
+            default: None,
+        }],
+    },
+    ToggleDef {
+        id: "perm_location",
+        title: "Location access",
+        desc: "Stops apps from reading your device location.",
+        group: "App permissions",
+        recommended: false,
+        on_label: "Denied for apps",
+        off_label: "Apps can ask",
+        ops: &[RegOp {
+            hive: Hive::Hklm,
+            key: r"SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\location",
+            name: "Value",
+            applied: OpSpec::Text("Deny"),
+            default: None,
+        }],
+    },
+    ToggleDef {
+        id: "perm_contacts",
+        title: "Contacts access",
+        desc: "Stops apps from reading your contacts.",
+        group: "App permissions",
+        recommended: false,
+        on_label: "Denied for apps",
+        off_label: "Apps can ask",
+        ops: &[RegOp {
+            hive: Hive::Hklm,
+            key: r"SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\contacts",
+            name: "Value",
+            applied: OpSpec::Text("Deny"),
+            default: None,
+        }],
+    },
+    ToggleDef {
+        id: "perm_calendar",
+        title: "Calendar access",
+        desc: "Stops apps from reading your calendar appointments.",
+        group: "App permissions",
+        recommended: false,
+        on_label: "Denied for apps",
+        off_label: "Apps can ask",
+        ops: &[RegOp {
+            hive: Hive::Hklm,
+            key: r"SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\calendar",
+            name: "Value",
+            applied: OpSpec::Text("Deny"),
+            default: None,
+        }],
+    },
+    ToggleDef {
+        id: "perm_email",
+        title: "Email access",
+        desc: "Stops apps from reading or sending email on your behalf.",
+        group: "App permissions",
+        recommended: false,
+        on_label: "Denied for apps",
+        off_label: "Apps can ask",
+        ops: &[RegOp {
+            hive: Hive::Hklm,
+            key: r"SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\email",
+            name: "Value",
+            applied: OpSpec::Text("Deny"),
+            default: None,
+        }],
+    },
+    ToggleDef {
+        id: "perm_messaging",
+        title: "Messaging access",
+        desc: "Stops apps from reading or sending text messages.",
+        group: "App permissions",
+        recommended: false,
+        on_label: "Denied for apps",
+        off_label: "Apps can ask",
+        ops: &[RegOp {
+            hive: Hive::Hklm,
+            key: r"SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\chat",
+            name: "Value",
+            applied: OpSpec::Text("Deny"),
+            default: None,
+        }],
+    },
+    ToggleDef {
+        id: "perm_call_history",
+        title: "Call history access",
+        desc: "Stops apps from reading your call history.",
+        group: "App permissions",
+        recommended: false,
+        on_label: "Denied for apps",
+        off_label: "Apps can ask",
+        ops: &[RegOp {
+            hive: Hive::Hklm,
+            key: r"SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\callHistory",
+            name: "Value",
+            applied: OpSpec::Text("Deny"),
+            default: None,
+        }],
+    },
+    ToggleDef {
+        id: "perm_account_info",
+        title: "Account info access",
+        desc: "Stops apps from reading your name and account picture.",
+        group: "App permissions",
+        recommended: false,
+        on_label: "Denied for apps",
+        off_label: "Apps can ask",
+        ops: &[RegOp {
+            hive: Hive::Hklm,
+            key: r"SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\userAccountInformation",
+            name: "Value",
+            applied: OpSpec::Text("Deny"),
+            default: None,
+        }],
+    },
+    ToggleDef {
+        id: "perm_radios",
+        title: "Radios access",
+        desc: "Stops apps from turning Bluetooth and other radios on or off.",
+        group: "App permissions",
+        recommended: false,
+        on_label: "Denied for apps",
+        off_label: "Apps can ask",
+        ops: &[RegOp {
+            hive: Hive::Hklm,
+            key: r"SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\radios",
+            name: "Value",
+            applied: OpSpec::Text("Deny"),
+            default: None,
+        }],
+    },
+    ToggleDef {
+        id: "perm_notifications",
+        title: "Notifications access",
+        desc: "Stops apps from reading your notifications.",
+        group: "App permissions",
+        recommended: false,
+        on_label: "Denied for apps",
+        off_label: "Apps can ask",
+        ops: &[RegOp {
+            hive: Hive::Hklm,
+            key: r"SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\userNotificationListener",
+            name: "Value",
+            applied: OpSpec::Text("Deny"),
+            default: None,
+        }],
+    },
+    ToggleDef {
+        id: "perm_documents",
+        title: "Documents library access",
+        desc: "Stops apps from opening your Documents library.",
+        group: "App permissions",
+        recommended: false,
+        on_label: "Denied for apps",
+        off_label: "Apps can ask",
+        ops: &[RegOp {
+            hive: Hive::Hklm,
+            key: r"SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\documentsLibrary",
+            name: "Value",
+            applied: OpSpec::Text("Deny"),
+            default: None,
         }],
     },
 ];
@@ -361,12 +843,22 @@ pub fn find(id: &str) -> Option<&'static ToggleDef> {
 // Detect + plan (no writes)
 // ---------------------------------------------------------------------------
 
+/// Reads one catalog value in its own kind (DWORD ops read DWORDs,
+/// text ops read strings; a value stored under the other type reads
+/// as absent, which is the safe interpretation for detection).
+fn read_op(store: &dyn RegStore, op: &RegOp) -> Option<OpVal> {
+    match op.applied {
+        OpSpec::Dword(_) => store.get_dword(op.hive, op.key, op.name).map(OpVal::Dword),
+        OpSpec::Text(_) => store.get_text(op.hive, op.key, op.name).map(OpVal::Text),
+    }
+}
+
 /// A toggle counts as applied only when *every* value it controls holds
 /// its applied value.
 pub fn detect(def: &ToggleDef, store: &dyn RegStore) -> bool {
     def.ops
         .iter()
-        .all(|op| store.get_dword(op.hive, op.key, op.name) == Some(op.applied))
+        .all(|op| read_op(store, op) == Some(op.applied.to_val()))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -377,9 +869,11 @@ pub struct PlannedOp {
     pub key: String,
     pub name: String,
     /// Value before the change (`None` = the value does not exist).
-    pub prior: Option<u32>,
+    #[serde(deserialize_with = "de_opt_opval")]
+    pub prior: Option<OpVal>,
     /// Value to write (`None` = delete the value).
-    pub value: Option<u32>,
+    #[serde(deserialize_with = "de_opt_opval")]
+    pub value: Option<OpVal>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -414,11 +908,11 @@ pub fn plan(changes: &[(String, bool)], store: &dyn RegStore) -> Vec<PlannedChan
                 hive: op.hive,
                 key: op.key.to_string(),
                 name: op.name.to_string(),
-                prior: store.get_dword(op.hive, op.key, op.name),
+                prior: read_op(store, op),
                 value: if *to_applied {
-                    Some(op.applied)
+                    Some(op.applied.to_val())
                 } else {
-                    op.default
+                    op.default.map(|d| d.to_val())
                 },
             })
             .collect();
@@ -451,8 +945,9 @@ pub fn execute(ops: &[PlannedOp], store: &dyn RegStore) -> (Vec<PlannedOp>, Vec<
     let mut done = Vec::new();
     let mut errors = Vec::new();
     for op in ops {
-        let result = match op.value {
-            Some(v) => store.set_dword(op.hive, &op.key, &op.name, v),
+        let result = match &op.value {
+            Some(OpVal::Dword(v)) => store.set_dword(op.hive, &op.key, &op.name, *v),
+            Some(OpVal::Text(t)) => store.set_text(op.hive, &op.key, &op.name, t),
             None => store.delete_value(op.hive, &op.key, &op.name),
         };
         match result {
@@ -470,7 +965,8 @@ pub struct UndoEntry {
     pub hive: Hive,
     pub key: String,
     pub name: String,
-    pub prior: Option<u32>,
+    #[serde(deserialize_with = "de_opt_opval")]
+    pub prior: Option<OpVal>,
 }
 
 impl From<&PlannedOp> for UndoEntry {
@@ -480,7 +976,7 @@ impl From<&PlannedOp> for UndoEntry {
             hive: op.hive,
             key: op.key.clone(),
             name: op.name.clone(),
-            prior: op.prior,
+            prior: op.prior.clone(),
         }
     }
 }
@@ -531,7 +1027,7 @@ pub fn undo_ops(batch: &UndoBatch) -> Vec<PlannedOp> {
             key: e.key.clone(),
             name: e.name.clone(),
             prior: None,
-            value: e.prior,
+            value: e.prior.clone(),
         })
         .collect()
 }
@@ -590,7 +1086,10 @@ pub fn validate_batch(batch: &ElevatedBatch) -> Result<(), String> {
                     op.name
                 )
             })?;
-        if !batch.undo && op.value != Some(cat.applied) && op.value != cat.default {
+        if !batch.undo
+            && op.value != Some(cat.applied.to_val())
+            && op.value != cat.default.map(|d| d.to_val())
+        {
             return Err(format!(
                 "{} {}\\{}: value {:?} is not one this toggle can write",
                 op.hive.label(),
@@ -1040,7 +1539,7 @@ pub fn undo_available(data_dir: &Path) -> Option<usize> {
 mod tests {
     use super::*;
 
-    fn planned_op(id: &str, value: Option<u32>) -> PlannedOp {
+    fn planned_op(id: &str, value: Option<OpVal>) -> PlannedOp {
         let def = find(id).unwrap();
         let op = def.ops[0];
         PlannedOp {
@@ -1058,14 +1557,20 @@ mod tests {
         let def = find("telemetry_basic").unwrap();
         let batch = ElevatedBatch {
             restore_point: true,
-            ops: vec![planned_op("telemetry_basic", Some(def.ops[0].applied))],
+            ops: vec![planned_op(
+                "telemetry_basic",
+                Some(def.ops[0].applied.to_val()),
+            )],
             undo: false,
             nonce: "n".into(),
         };
         assert!(validate_batch(&batch).is_ok());
         // The un-apply direction writes the catalog default.
         let batch = ElevatedBatch {
-            ops: vec![planned_op("telemetry_basic", def.ops[0].default)],
+            ops: vec![planned_op(
+                "telemetry_basic",
+                def.ops[0].default.map(|d| d.to_val()),
+            )],
             ..batch
         };
         assert!(validate_batch(&batch).is_ok());
@@ -1074,7 +1579,7 @@ mod tests {
     #[test]
     fn helper_validation_rejects_foreign_ops_and_values() {
         // A registry value the catalog does not own (a Run key).
-        let mut foreign = planned_op("telemetry_basic", Some(1));
+        let mut foreign = planned_op("telemetry_basic", Some(OpVal::Dword(1)));
         foreign.key = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run".to_string();
         let batch = ElevatedBatch {
             restore_point: false,
@@ -1085,12 +1590,12 @@ mod tests {
         assert!(validate_batch(&batch).is_err());
         // A catalog value with a value the toggle can never write.
         let batch = ElevatedBatch {
-            ops: vec![planned_op("telemetry_basic", Some(7))],
+            ops: vec![planned_op("telemetry_basic", Some(OpVal::Dword(7)))],
             ..batch
         };
         assert!(validate_batch(&batch).is_err());
         // Unknown toggle id.
-        let mut op = planned_op("telemetry_basic", Some(1));
+        let mut op = planned_op("telemetry_basic", Some(OpVal::Dword(1)));
         op.toggle_id = "not_a_toggle".to_string();
         let batch = ElevatedBatch {
             ops: vec![op],
@@ -1104,13 +1609,13 @@ mod tests {
         // Undo writes the recorded prior, which may be any DWORD...
         let batch = ElevatedBatch {
             restore_point: false,
-            ops: vec![planned_op("telemetry_basic", Some(7))],
+            ops: vec![planned_op("telemetry_basic", Some(OpVal::Dword(7)))],
             undo: true,
             nonce: String::new(),
         };
         assert!(validate_batch(&batch).is_ok());
         // ...but never to a value outside the catalog.
-        let mut foreign = planned_op("telemetry_basic", Some(7));
+        let mut foreign = planned_op("telemetry_basic", Some(OpVal::Dword(7)));
         foreign.name = "SomethingElse".to_string();
         let batch = ElevatedBatch {
             ops: vec![foreign],
@@ -1125,7 +1630,7 @@ mod tests {
             std::env::temp_dir().join(format!("tidytray-t2-reconcile-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let op = planned_op("telemetry_basic", Some(1));
+        let op = planned_op("telemetry_basic", Some(OpVal::Dword(1)));
         let batch = ElevatedBatch {
             restore_point: false,
             ops: vec![op.clone()],
@@ -1168,7 +1673,7 @@ mod tests {
             assert!(!def.ops.is_empty(), "{} has no ops", def.id);
             assert!(!def.title.is_empty() && !def.desc.is_empty());
         }
-        assert_eq!(catalog().len(), 10);
+        assert_eq!(catalog().len(), 32);
         assert!(catalog().iter().filter(|d| d.recommended).count() >= 8);
     }
 
@@ -1200,8 +1705,8 @@ mod tests {
         assert_eq!(planned.len(), 1);
         assert_eq!(planned[0].from_label, "Hidden");
         assert_eq!(planned[0].to_label, "Shown");
-        assert_eq!(planned[0].ops[0].prior, Some(1));
-        assert_eq!(planned[0].ops[0].value, Some(0));
+        assert_eq!(planned[0].ops[0].prior, Some(OpVal::Dword(1)));
+        assert_eq!(planned[0].ops[0].value, Some(OpVal::Dword(0)));
         assert!(!planned[0].needs_admin);
         let _ = def;
         // Already in target state -> nothing planned.
@@ -1282,5 +1787,69 @@ mod tests {
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].entries[0].toggle_id, "widgets_off");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn text_ops_plan_execute_and_revert_round_trip() {
+        let store = FakeStore::default();
+        let def = find("perm_camera").unwrap();
+        assert!(!detect(def, &store));
+        let planned = plan(&[("perm_camera".to_string(), true)], &store);
+        assert_eq!(planned.len(), 1);
+        assert_eq!(
+            planned[0].ops[0].value,
+            Some(OpVal::Text("Deny".to_string()))
+        );
+        assert_eq!(planned[0].ops[0].prior, None);
+        let (done, errors) = execute(&planned[0].ops, &store);
+        assert!(errors.is_empty(), "{errors:?}");
+        assert_eq!(done.len(), 1);
+        assert!(detect(def, &store));
+        let back = plan(&[("perm_camera".to_string(), false)], &store);
+        let (_, errors) = execute(&back[0].ops, &store);
+        assert!(errors.is_empty(), "{errors:?}");
+        assert!(!detect(def, &store));
+        assert_eq!(store.get_text(Hive::Hklm, def.ops[0].key, "Value"), None);
+    }
+
+    #[test]
+    fn validate_batch_checks_text_values_against_the_catalog() {
+        let ok = ElevatedBatch {
+            ops: vec![planned_op(
+                "perm_camera",
+                Some(OpVal::Text("Deny".to_string())),
+            )],
+            restore_point: false,
+            undo: false,
+            nonce: String::new(),
+        };
+        assert!(validate_batch(&ok).is_ok());
+        let foreign = ElevatedBatch {
+            ops: vec![planned_op(
+                "perm_camera",
+                Some(OpVal::Text("Allow".to_string())),
+            )],
+            restore_point: false,
+            undo: false,
+            nonce: String::new(),
+        };
+        assert!(validate_batch(&foreign).is_err());
+    }
+
+    #[test]
+    fn legacy_undo_json_with_bare_dwords_still_parses() {
+        let text = r#"[{"id":"b1","ts":"2026-01-01T00:00:00Z","entries":[{"toggleId":"telemetry_basic","hive":"HKLM","key":"K","name":"N","prior":3}]}]"#;
+        let batches: Vec<UndoBatch> = serde_json::from_str(text).unwrap();
+        assert_eq!(batches[0].entries[0].prior, Some(OpVal::Dword(3)));
+        let op = PlannedOp {
+            toggle_id: "perm_camera".to_string(),
+            hive: Hive::Hklm,
+            key: "K".to_string(),
+            name: "Value".to_string(),
+            prior: None,
+            value: Some(OpVal::Text("Deny".to_string())),
+        };
+        let round: PlannedOp = serde_json::from_str(&serde_json::to_string(&op).unwrap()).unwrap();
+        assert_eq!(round.value, Some(OpVal::Text("Deny".to_string())));
     }
 }
