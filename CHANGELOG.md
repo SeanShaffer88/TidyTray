@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+### Fixed — post-release review batch
+- The Tweaks elevated helper now re-validates its batch against the
+  toggle catalog before writing anything (the Apps helper already did),
+  helper batch files use unguessable names, and results must echo the
+  batch's nonce before they are trusted.
+- An elevated helper that outlives its wait is now reported as an
+  unknown outcome instead of a clean failure, and a late result is
+  reconciled into the undo store on the next apply or undo — changes
+  can no longer lose their undo record.
+- The window and the scheduled headless run can no longer clean at the
+  same time: runs take a cross-process lock in the data folder, so two
+  processes never move files into the quarantine at once.
+- The audit log keeps one buffered writer per run instead of opening
+  the file for every entry, skip events are summarized per category
+  (with sample paths), and daily logs are pruned after 30 days.
+- The kill switch is now honored while a run collects candidates, not
+  only while it processes them, so stopping a run over a huge tree is
+  as fast as the documentation promises.
+- Quarantine retention is judged by the newest entry in a run instead
+  of the run folder's timestamp, and restoring across volumes verifies
+  the copy before the quarantined original is removed.
+- A damaged `config.json` is now preserved as `config.json.bad` and
+  the reset to defaults is written to the audit log, instead of the
+  settings silently reverting.
+- The manifest checksum now uses an explicitly canonical JSON form,
+  so it cannot be invalidated by a future dependency's JSON settings.
 - Fixed: the sidebar Safety badge could show a stale dry-run count on other screens; the safety status now loads when the app starts, so the badge is correct everywhere.
 
 ## 1.0.0 — 2026-11-11
