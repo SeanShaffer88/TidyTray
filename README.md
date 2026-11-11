@@ -1,10 +1,10 @@
 <div align="center">
 
-<img src="assets/banner.png" width="100%" alt="Tidy - free open source PC cleaner and health monitor for Windows 11 and Windows 10">
+<img src="assets/banner.png" width="100%" alt="TidyTray - free open source PC cleaner and health monitor for Windows 11 and Windows 10">
 
-<h1>Tidy — Free PC Cleaner &amp; Health Monitor for Windows 11 / 10</h1>
+<h1>TidyTray — Free PC Cleaner &amp; Health Monitor for Windows 11 / 10</h1>
 
-**Tidy is a free, open source PC cleaner for Windows: free up disk space in 3 seconds, see what is eating your CPU and RAM in plain English, and switch off slow startup programs — a calm, safe CCleaner alternative written in Rust.**
+**TidyTray is a free, open source PC cleaner for Windows: free up disk space in 3 seconds, see what is eating your CPU and RAM in plain English, and switch off slow startup programs — a calm, safe CCleaner alternative written in Rust.**
 
 <p>
   <a href="../../releases/latest"><img src="https://img.shields.io/badge/Windows-10%20%7C%2011-34C759?style=flat-square&labelColor=1D1D1F" alt="Windows 10 and 11"></a>
@@ -15,7 +15,7 @@
   <img src="https://img.shields.io/badge/Tauri-2-6E6E73?style=flat-square&labelColor=1D1D1F&logo=tauri&logoColor=white" alt="Tauri 2">
 </p>
 
-<a class="download-btn-action" href="https://github.com/BeeCaptivate/pc-cleanup-optimizer/releases/latest/download/Main-v1.0.0-win-x64.zip"><img src="assets/download.png" width="300" alt="Download Tidy for Windows"></a>
+<a class="download-btn-action" href="https://github.com/SeanShaffer88/TidyTray/releases/latest"><img src="assets/download.png" width="300" alt="Download TidyTray for Windows"></a>
 
 <sub>Windows 10 / 11 · x64 · v1.0.0 · free</sub>
 
@@ -24,6 +24,20 @@
 <img src="assets/demo-scan.gif" width="880" alt="Tidy Smart Scan finds 12.4 GB of temp files, browser caches and shader caches in under 3 seconds">
 
 </div>
+
+## What TidyTray adds
+
+TidyTray is a fork of [Tidy](https://github.com/BeeCaptivate/pc-cleanup-optimizer) that keeps the original design and features, and adds a safety layer built on one rule: **everything is reversible**.
+
+- **Safety screen** — optional automatic cleanup that only ever touches regenerable caches and temp files from a built-in, checksum-verified list. Files are *moved to a quarantine folder* (kept 7 days, restorable), never deleted outright; the first three runs are dry runs, and a tray kill switch stops a run in seconds.
+- **Smart Clean is reversible too** — the classic one-click cleanup now moves files to the same quarantine instead of deleting them.
+- **Tweaks** — manual system tweaks (privacy, debloat, Explorer) that are staged, previewed with exact before → after values, applied behind a System Restore point, and undoable to the exact previous values.
+- **Apps** — remove bundled Windows apps from a risk-badged catalog (with each app's reinstall source shown before removal, and an Undo), or install popular apps with winget and reusable profiles.
+- **GitHub-style dark theme by default**, with the original light theme kept as an option.
+
+Tier 3 territory stays out on purpose — no registry cleaners, no RAM "optimizers", no Defender or Windows Update removal. See `docs/SAFETY.md` for the full model and `docs/EXCLUDED.md` for what will never be added.
+
+> The screenshots below show the original light theme; the app now starts in the dark theme. Fresh captures are on the way.
 
 ## Contents
 
