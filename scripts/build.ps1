@@ -1,4 +1,6 @@
-# Builds Tidy and packages it as dist\Tidy-v1.0.0-win-x64.zip
+# Builds TidyTray and packages it as dist\TidyTray-v<version>-x64-Portable.zip
+# (the same shape the release workflow publishes; the NSIS installer, when
+# built, is copied next to the zip as TidyTray-v<version>-x64-Setup.exe)
 # Usage: powershell -ExecutionPolicy Bypass -File scripts\build.ps1 [-NoInstaller] [-Test]
 param(
     [switch]$NoInstaller,
@@ -6,8 +8,8 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$version = '1.0.0'
-$release = "Tidy-v$version-win-x64.zip"
+$version = (Get-Content (Join-Path $root 'src-tauri\tauri.conf.json') -Raw | ConvertFrom-Json).version
+$release = "TidyTray-v$version-x64-Portable.zip"
 $dist = Join-Path $root 'dist'
 
 Push-Location (Join-Path $root 'src-tauri')
@@ -32,16 +34,16 @@ try {
 
 $targetDir = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $root 'src-tauri\target' }
 $exe = Get-ChildItem -Path (Join-Path $targetDir 'release') -Filter '*.exe' |
-    Where-Object { $_.Name -in @('Tidy.exe', 'tidy.exe') } | Select-Object -First 1
-if (-not $exe) { throw "Tidy.exe not found in $targetDir\release" }
+    Where-Object { $_.Name -in @('TidyTray.exe', 'tidytray.exe') } | Select-Object -First 1
+if (-not $exe) { throw "TidyTray.exe not found in $targetDir\release" }
 
 $stage = Join-Path $dist 'stage'
 Remove-Item -Recurse -Force $stage -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force $stage | Out-Null
-Copy-Item $exe.FullName (Join-Path $stage 'Tidy.exe')
+Copy-Item $exe.FullName (Join-Path $stage 'TidyTray.exe')
 Copy-Item (Join-Path $root 'LICENSE') $stage
 $installer = Get-ChildItem -Path (Join-Path $targetDir 'release\bundle\nsis') -Filter '*.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
-if ($installer) { Copy-Item $installer.FullName (Join-Path $stage "Tidy-$version-setup.exe") }
+if ($installer) { Copy-Item $installer.FullName (Join-Path $dist "TidyTray-v$version-x64-Setup.exe") }
 
 $zip = Join-Path $dist $release
 Remove-Item -Force $zip -ErrorAction SilentlyContinue
