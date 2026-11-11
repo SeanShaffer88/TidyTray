@@ -625,6 +625,16 @@ function render() {
 
 window.addEventListener('hashchange', () => { S.cleanP = S.cleanP >= 1 ? null : S.cleanP; render(); });
 
+// ---------- theme: GitHub-style dark by default, light kept as an option ----------
+function applyTheme(t) { document.documentElement.dataset.theme = t === 'light' ? 'light' : 'dark'; }
+document.addEventListener('click', async e => {
+  if (!e.target.closest('#theme-toggle')) return;
+  const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+  applyTheme(next);
+  if (!IN_TAURI) return;
+  try { const st = await invoke('get_settings'); st.theme = next; await invoke('save_settings', { settings: st }); } catch (err) { console.error(err); }
+});
+
 
 
 function animate(ms, step) {
@@ -758,6 +768,8 @@ function applyProcs(rows) {
 async function live() {
 
   try {
+
+    applyTheme((await invoke('get_settings')).theme);
 
     const o = await invoke('get_overview');
 

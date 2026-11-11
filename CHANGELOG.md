@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- New default theme: GitHub-style dark across the whole app. The original
+  light theme is kept as an option — switch any time with the moon button
+  at the bottom of the sidebar; the choice is saved in settings.
+
 - M3: Smart Clean now moves files to quarantine instead of deleting them.
   Every cleaning path in the app is reversible for the retention window
   (7 days by default); Smart Clean runs are audit-logged, expired
