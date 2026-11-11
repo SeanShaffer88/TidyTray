@@ -79,6 +79,23 @@ discipline — the autonomous engine never touches it:
 - Undo restores exact priors, including deleting values that did not
   exist before the change.
 
+## Tier 2 (app removal and installs)
+
+- The **removal catalog is fixed in the build** (26 bundled apps with
+  Safe/Caution/Advanced badges). Windows-critical packages and core
+  utilities are never listed. Callers — UI, CLI, or the elevated helper
+  itself — can only ever remove catalog packages: the helper re-checks
+  membership before running anything.
+- Removal is staged and previewed; the preview shows each app's
+  reinstall source *before* removal. One elevated run creates a restore
+  point and removes the packages (current user + provisioned copy).
+  Every removal is audit-logged and recorded; **Undo** reinstalls
+  winget-backed apps automatically and names the Store apps to
+  reinstall manually — it never pretends a manual step was automated.
+- Installs run **winget with catalog ids only** (21 apps). Profile ids
+  are validated against the catalog when a profile is saved. If winget
+  is unavailable, the Install tab explains instead of failing.
+
 ## Honest limits
 
 - The pre-move "file is in use" check is best-effort. If a move fails, the
