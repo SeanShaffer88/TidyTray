@@ -35,7 +35,7 @@ missing), **Not started**, **Excluded** (Tier 3, will not be built).
 | M2 Autonomous loop (scheduler, pre-flight checks, tray kill switch, dry-run opt-in flow) | Backend complete — Task Scheduler task via schtasks (weekly/daily), battery/fullscreen pre-flight gate, tray Run/Pause items + status line, `--autonomous-run` / `--clean-now` / `--status` CLI, autonomous enable gated on the dry-run phase and installing the task. Safety screen followed in the M2 UI slice (owner-approved design) |
 | M3 Tier 1 categories complete on the Windows test matrix | Partial — all 9 categories are in the manifest; field matrix not yet run |
 | M4 Tier 2 foundation (preview/diff, restore point, undo artifacts, elevated helper) | Done (M4) | tier2.rs: RegStore abstraction (winreg + in-memory fake), 10-toggle catalog, detect/plan with priors captured, one elevated helper run (--tier2-elevated) covers the restore point + all HKLM writes, undo batches record exact prior values (absent values are deleted on undo); Tweaks screen per the approved design (staging, preview sheet, Recommended preset, Undo, search); CLI --tweaks/--tweak-apply/--tweak-undo expose the same operations |
-| M5 Tier 2 full catalog (incl. the 2026-11-10 mining from W10Privacy, ShutUp10++, Winaero Tweaker and XToolbox — see BLUEPRINT.md §2) | Done — Apps screen (owner-approved design): 26-entry removal catalog with Safe/Caution/Advanced badges and per-app reinstall sources, detected against the real installed set; removal via one elevated helper run (restore point first, provisioned copies removed too) with undo records — winget-backed apps reinstall automatically, Store apps are reported for manual reinstall; 21-app winget install catalog with installed detection, two built-in profiles plus user-saved profiles. Honest limits: removal targets the current user plus the provisioned copy; catalogs grow from here toward the blueprint's ~90 removal entries |
+| M5 Tier 2 full catalog (incl. the 2026-11-10 mining from W10Privacy, ShutUp10++, Winaero Tweaker and XToolbox — see BLUEPRINT.md §2) | Done — Apps screen (owner-approved design): 26-entry removal catalog with Safe/Caution/Advanced badges and per-app reinstall sources, detected against the real installed set; removal via one elevated helper run (restore point first, provisioned copies removed too) with undo records — winget-backed apps reinstall automatically, Store apps are reported for manual reinstall; 21-app winget install catalog with installed detection, two built-in profiles plus user-saved profiles. Honest limits: removal targets the current user plus the provisioned copy; the removal catalog stands at 84 entries (grown in the Tier 2 catalog-depth slice) |
 | M6 Polish & release | Done — product renamed to TidyTray everywhere (app name, binary, identifier com.tidytray.desktop, settings folder, UI brand, tray); README and changelog prepared; **v1.0.0 released** from the tag-triggered workflow (run 42976799959) with exactly TidyTray-v1.0.0-x64-Setup.exe + TidyTray-v1.0.0-x64-Portable.zip + SHA256SUMS.txt, re-downloaded and hash-verified; portable zip contains TidyTray.exe + LICENSE |
 
 ## Post-release review batches B & C (2026-11-11, v1.1.0)
@@ -92,3 +92,26 @@ audit-logged; the manifest checksum uses explicit canonical JSON.
   Implement-or-remove is an open decision (BLUEPRINT.md §16 note).
 - QUALITY.md scorecard was planned for the first release gate (M6) and
   has not been introduced yet.
+
+## Tier 2 catalog depth (2026-11-11, post-v1.1.0)
+
+- **String-valued registry ops:** the Tier 2 engine now handles REG_SZ
+  values alongside DWORDs (`OpSpec`/`OpVal`), through detect, plan,
+  the validated elevated helper, execute and undo. Undo files written
+  by earlier versions (bare DWORD numbers) still parse.
+- **Tweaks catalog 10 → 32:** a new **App permissions** group (12
+  toggles denying camera, microphone, location, contacts, calendar,
+  email, messaging, call history, account info, radios, notifications
+  and the Documents library through the CapabilityAccessManager
+  consent store) plus ten DWORD toggles from the approved mining list:
+  app-launch tracking, error reporting, feedback requests, online
+  speech recognition, typing & inking personalization, clipboard
+  history, clipboard cloud sync, suggested/sponsored apps, Aero
+  Shake, and detailed sign-in messages.
+- **Removal catalog 62 → 84:** 22 more verified Store packages with
+  conservative badges (retired Bing and Office Mobile apps, Sway,
+  Whiteboard, Journal, Power BI, Remote Desktop, and more).
+- **Hygiene:** `TIDY_DEMO` is honored only in debug builds, so a stray
+  environment variable can never make a shipped build show demo data;
+  the README and `scripts/build.ps1` now describe TidyTray and its
+  actual release assets throughout.
