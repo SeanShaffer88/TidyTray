@@ -191,3 +191,23 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .chart text { fill: var(--ink3); stroke: none; font-size: 10.5px; font-family: var(--t); }
 .cursor { position: absolute; z-index: 50; width: 22px; height: 22px; pointer-events: none; filter: drop-shadow(0 1px 2px rgba(0,0,0,.3)); }
 .cursor svg { width: 22px; height: 22px; fill: #1D1D1F; stroke: #fff; stroke-width: 1.4; }
+
+/* Safety screen (blueprint M2 UI) */
+.statusrow { display: flex; align-items: center; gap: 12px; }
+.statusrow .nm, .statusrow > div:last-child { min-width: 0; flex: 1; }
+.statusrow b { font-size: 14px; font-weight: 600; display: block; }
+.statusrow small { display: block; color: var(--ink2); margin-top: 2px; }
+.shieldic { width: 38px; height: 38px; border-radius: 10px; background: var(--green-soft); color: var(--green-ink); display: grid; place-items: center; flex: none; }
+.shieldic svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+.sfbar { height: 6px; background: var(--track); border-radius: 3px; margin: 14px 0 8px; overflow: hidden; }
+.sfbar i { display: block; height: 100%; background: var(--green); border-radius: 3px; }
+.barlbl { color: var(--ink2); font-size: 12px; }
+.btnrow { display: flex; gap: 8px; margin-top: 12px; }
+.toggle.locked { opacity: .4; }
+.sfsel { background: var(--fill); border: 1px solid var(--line); border-radius: 7px; padding: 4px 8px; font: inherit; font-size: 12.5px; color: var(--ink); }
+.logrow { display: flex; gap: 10px; padding: 6px 0; align-items: baseline; font-size: 12.5px; }
+.logrow + .logrow { border-top: 1px solid var(--line2); }
+.logrow .t { color: var(--ink3); font-family: var(--m); font-size: 11.5px; flex: none; }
+.logrow .what { flex: 1; min-width: 0; }
+.logrow .amt { font-weight: 600; font-variant-numeric: tabular-nums; }
+.logrow .ok { color: var(--green-ink); } .logrow .skip { color: var(--amber); }
