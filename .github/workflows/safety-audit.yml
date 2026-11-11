@@ -1,0 +1,27 @@
+name: Safety audit
+
+# The blueprint §11.3 safety property tests, run in isolation so a failure
+# is unmistakable: manifest boundaries, no user-data paths, conservative
+# ages, and no direct deletion or registry access in the autonomous engine.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  safety-tests:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: src-tauri
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Safety property tests
+        run: cargo test safety_tests
+      - name: Validate manifest JSON parses
+        shell: pwsh
+        run: |
+          $m = Get-Content manifest/cleaner-manifest.json -Raw | ConvertFrom-Json
+          if ($m.schema_version -ne 1) { throw "unexpected manifest schema_version" }
+          if ($m.categories.Count -ne 9) { throw "expected 9 Tier 1 categories" }

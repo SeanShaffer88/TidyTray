@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: src-tauri
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Format check (safety-core modules)
+        # The upstream modules predate rustfmt enforcement and keep their
+        # original style; the new safety core is held to rustfmt.
+        run: rustfmt --edition 2021 --check src/sha256.rs src/manifest.rs src/audit.rs src/appconfig.rs src/lockcheck.rs src/quarantine.rs src/cleaner.rs src/safety_tests.rs
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Test
+        run: cargo test
+      - name: Build
+        run: cargo build --release
