@@ -39,10 +39,10 @@ Tier 3 territory stays out on purpose — no registry cleaners, no RAM "optimize
 
 ## Contents
 
-- [Why Tidy](#why-tidy)
+- [Why TidyTray](#why-tidytray)
 - [Features](#features)
 - [Screenshots](#screenshots)
-- [Tidy vs. the usual ways](#tidy-vs-the-usual-ways)
+- [TidyTray vs. the usual ways](#tidytray-vs-the-usual-ways)
 - [Download &amp; install](#download--install)
 - [Build from source](#build-from-source)
 - [System requirements](#system-requirements)
@@ -50,11 +50,11 @@ Tier 3 territory stays out on purpose — no registry cleaners, no RAM "optimize
 - [Roadmap](#roadmap)
 - [License](#license)
 
-## Why Tidy
+## Why TidyTray
 
 Your C: drive is full again, the fans spin up for no reason, and Windows takes forever to sign in. The built-in tools are spread across Settings, Task Manager and Disk Cleanup, and most "PC optimizer" apps are noisy, upsell-heavy and delete more than they should.
 
-**Tidy puts PC cleanup and PC health in one quiet window.** One Smart Scan measures temp files, browser caches, the Windows Update cache, crash dumps, NVIDIA / DirectX shader caches and the Recycle Bin in about three seconds. A process view explains in plain English *why* `MsMpEng.exe`, `svchost.exe` or `Memory Compression` is using your CPU or RAM. A startup list shows which apps slow down your boot. Everything runs locally, nothing is uploaded, and a built-in safe-list makes sure your documents, photos and system files are never touched.
+**TidyTray puts PC cleanup and PC health in one quiet window.** One Smart Scan measures temp files, browser caches, the Windows Update cache, crash dumps, NVIDIA / DirectX shader caches and the Recycle Bin in about three seconds. A process view explains in plain English *why* `MsMpEng.exe`, `svchost.exe` or `Memory Compression` is using your CPU or RAM. A startup list shows which apps slow down your boot. Everything runs locally, nothing is uploaded, and a built-in safe-list makes sure your documents, photos and system files are never touched.
 
 ## Features
 
@@ -68,7 +68,7 @@ A parallel directory walker (plain Rust threads, one per core) sweeps every know
 
 <img src="assets/screen-cleanup.png" width="100%" alt="Cleanup checklist with per-category file counts and sizes, dry run on">
 
-Pick categories in a clear checklist, see how many files and gigabytes each one holds, and press **Clean**. Dry run is on by default: Tidy walks the exact same files and reports what it *would* delete before you ever let it remove anything. Items that cannot be undone (Recycle Bin, update cache) are marked **Review** and unchecked by default.
+Pick categories in a clear checklist, see how many files and gigabytes each one holds, and press **Clean**. Dry run is on by default: TidyTray walks the exact same files and reports what it *would* delete before you ever let it remove anything. Items that cannot be undone (Recycle Bin, update cache) are marked **Review** and unchecked by default.
 
 ### 3. Who's eating my PC?
 
@@ -152,9 +152,9 @@ System folders (`System32`, `WinSxS`, `Program Files`), your personal folders (D
   </tr>
 </table>
 
-## Tidy vs. the usual ways
+## TidyTray vs. the usual ways
 
-| | Tidy | Manual tweaking | Typical "optimizer" apps | Online guides |
+| | TidyTray | Manual tweaking | Typical "optimizer" apps | Online guides |
 |---|:---:|:---:|:---:|:---:|
 | Finds temp, cache, shader and update junk in one pass | ✅ ~3 s | ❌ many folders | ✅ | ❌ |
 | Dry run before deleting | ✅ default | ➖ | ❌ rarely | ❌ |
@@ -166,18 +166,18 @@ System folders (`System32`, `WinSxS`, `Program Files`), your personal folders (D
 
 ## Download &amp; install
 
-<a class="download-btn-action" href="https://github.com/SeanShaffer88/TidyTray/releases/latest"><img src="assets/download-compact.png" width="230" alt="Download TidyTray v1.0.0"></a>
+<a class="download-btn-action" href="https://github.com/SeanShaffer88/TidyTray/releases/latest"><img src="assets/download-compact.png" width="230" alt="Download the latest TidyTray"></a>
 
-1. Download **Tidy-v1.0.0-win-x64.zip** from the latest release.
-2. Right-click the zip → **Extract All…**
-3. Run **Tidy.exe** (portable) or the included setup if you want a Start menu entry.
-4. Tidy runs Smart Scan on launch. Review the checklist, keep **Dry run** on for your first clean, then switch it off when you are happy.
+1. Download **TidyTray-v1.1.0-x64-Portable.zip** (portable) or **TidyTray-v1.1.0-x64-Setup.exe** (installer) from the latest release.
+2. For the portable zip: right-click → **Extract All…**
+3. Run **TidyTray.exe**, or run the setup if you want a Start menu entry.
+4. TidyTray runs Smart Scan on launch. Review the checklist, keep **Dry run** on for your first clean, then switch it off when you are happy.
 
 > [!NOTE]
 > Windows SmartScreen may say "Windows protected your PC" for new, unsigned apps. Click **More info → Run anyway**. The full source is in this repository and you can build the exe yourself.
 
 > [!TIP]
-> Cleaning the Windows Update cache and other system folders needs administrator rights. Right-click Tidy.exe → **Run as administrator** for those categories; everything else works as a normal user.
+> Cleaning the Windows Update cache and other system folders needs administrator rights. Right-click TidyTray.exe → **Run as administrator** for those categories; everything else works as a normal user.
 
 ## Build from source
 
@@ -185,13 +185,13 @@ Requirements: Windows 10/11 x64, Rust stable (rustup) with the MSVC toolchain (V
 
 ```powershell
 cargo install tauri-cli --version "^2"
-git clone <this repo> && cd pc-cleanup-optimizer\src-tauri
+git clone <this repo> && cd TidyTray\src-tauri
 
 cargo tauri dev        # run with hot reload of the ui\ folder
 cargo test             # unit tests: scanner, safe-list, duplicates, startup parsing
 cargo tauri build      # release exe + NSIS installer
 
-# or build and zip in one go -> dist\Tidy-v1.0.0-win-x64.zip
+# or build and zip in one go -> dist\TidyTray-v<version>-x64-Portable.zip
 powershell -ExecutionPolicy Bypass -File ..\scripts\build.ps1 -Test
 ```
 
@@ -242,57 +242,57 @@ Windows only.
 ## FAQ
 
 <details>
-<summary><b>Is Tidy safe? Can it delete my files?</b></summary>
+<summary><b>Is TidyTray safe? Can it delete my files?</b></summary>
 
-Tidy only looks inside known cache and temp locations, and every path also passes a safe-list that blocks system folders, your personal folders and personal file types. Dry run is on by default, so the first clean only reports what would be removed. The code is MIT licensed and open for review.
+TidyTray only looks inside known cache and temp locations, and every path also passes a safe-list that blocks system folders, your personal folders and personal file types. Dry run is on by default, so the first clean only reports what would be removed. The code is MIT licensed and open for review.
 </details>
 
 <details>
 <summary><b>How do I free up disk space on Windows 11 quickly?</b></summary>
 
-Run Tidy's Smart Scan: in about three seconds it totals temp files, browser caches, the Windows Update cache, crash dumps and shader caches, which together are often 5–20 GB. Then use the Storage screen to find large files and duplicates you no longer need.
+Run TidyTray's Smart Scan: in about three seconds it totals temp files, browser caches, the Windows Update cache, crash dumps and shader caches, which together are often 5–20 GB. Then use the Storage screen to find large files and duplicates you no longer need.
 </details>
 
 <details>
 <summary><b>Is it safe to delete temp files in Windows 10 and 11?</b></summary>
 
-Yes, as long as nothing is using them. Tidy skips temp files younger than 24 hours and silently skips files that are locked by a running program.
+Yes, as long as nothing is using them. TidyTray skips temp files younger than 24 hours and silently skips files that are locked by a running program.
 </details>
 
 <details>
 <summary><b>How do I fix high CPU usage on Windows 11?</b></summary>
 
-Open **Processes**, sort by CPU and read the explanation next to the top app. Common causes are Antimalware Service Executable (a scheduled scan), Search Indexer (catching up after new files), Windows Modules Installer (updates) or a browser with many tabs. Tidy tells you whether a process is part of Windows or safe to end.
+Open **Processes**, sort by CPU and read the explanation next to the top app. Common causes are Antimalware Service Executable (a scheduled scan), Search Indexer (catching up after new files), Windows Modules Installer (updates) or a browser with many tabs. TidyTray tells you whether a process is part of Windows or safe to end.
 </details>
 
 <details>
 <summary><b>What is "Memory Compression" and why does it use so much RAM?</b></summary>
 
-It is Windows compressing idle memory instead of writing it to the page file. It grows when RAM is tight and is normal. Tidy shows it separately in the Memory screen so you can see real memory pressure.
+It is Windows compressing idle memory instead of writing it to the page file. It grows when RAM is tight and is normal. TidyTray shows it separately in the Memory screen so you can see real memory pressure.
 </details>
 
 <details>
 <summary><b>Does clearing the NVIDIA shader cache improve game performance?</b></summary>
 
-It frees space and fixes some stutter caused by a corrupted cache. Games rebuild shaders on the next launch, so the first minutes may hitch slightly. Tidy marks shader caches as "low risk" for that reason.
+It frees space and fixes some stutter caused by a corrupted cache. Games rebuild shaders on the next launch, so the first minutes may hitch slightly. TidyTray marks shader caches as "low risk" for that reason.
 </details>
 
 <details>
 <summary><b>How do I disable startup programs in Windows 11?</b></summary>
 
-The Startup screen lists every app from the registry Run keys with its impact. Toggling from inside Tidy arrives in 1.1; until then use Task Manager → Startup apps, and Tidy will show the new state.
+The Startup screen lists every app from the registry Run keys with its impact. Toggling from inside TidyTray is not in yet; for now use Task Manager → Startup apps, and TidyTray will show the new state.
 </details>
 
 <details>
-<summary><b>Is Tidy a good CCleaner alternative?</b></summary>
+<summary><b>Is TidyTray a good CCleaner alternative?</b></summary>
 
-If you want a free, open source PC cleaner without ads, bundled offers or a registry "cleaner", yes. Tidy focuses on safe space recovery plus understanding CPU, RAM and startup, not on aggressive tweaks.
+If you want a free, open source PC cleaner without ads, bundled offers or a registry "cleaner", yes. TidyTray focuses on safe space recovery plus understanding CPU, RAM and startup, not on aggressive tweaks.
 </details>
 
 <details>
-<summary><b>Does Tidy collect any data or need an account?</b></summary>
+<summary><b>Does TidyTray collect any data or need an account?</b></summary>
 
-No. Tidy works fully offline, has no telemetry, no account and no network access.
+No. TidyTray works fully offline, has no telemetry, no account and no network access.
 </details>
 
 ## Roadmap
@@ -303,7 +303,7 @@ No. Tidy works fully offline, has no telemetry, no account and no network access
 - [x] Memory pressure gauge
 - [x] Startup programs with impact rating
 - [x] Large file and duplicate finder core
-- [ ] Toggle startup apps from Tidy (StartupApproved registry write)
+- [ ] Toggle startup apps from TidyTray (StartupApproved registry write)
 - [ ] Free standby memory (admin, `NtSetSystemInformation`)
 - [ ] Empty Recycle Bin through the Shell API
 - [ ] Real per-category storage indexer (USN journal) instead of estimates
@@ -312,7 +312,7 @@ No. Tidy works fully offline, has no telemetry, no account and no network access
 
 ## Keywords
 
-Tidy is a free **PC cleaner for Windows 11 and Windows 10** that helps you **free up disk space**, clean **temp files**, browser cache and shader cache, check **RAM usage** and memory pressure, find out **what is using high CPU**, and manage **startup programs** — an open source **CCleaner alternative** and lightweight **PC optimizer** built with Rust and Tauri.
+TidyTray is a free **PC cleaner for Windows 11 and Windows 10** that helps you **free up disk space**, clean **temp files**, browser cache and shader cache, check **RAM usage** and memory pressure, find out **what is using high CPU**, and manage **startup programs** — an open source **CCleaner alternative** and lightweight **PC optimizer** built with Rust and Tauri.
 
 <sub>pc cleaner, free pc cleaner, open source pc cleaner, free up disk space windows 11, free up disk space windows 10, disk cleanup windows 11, c drive full windows 11, ram cleaner, ram usage windows 11, memory pressure, high cpu usage fix, high cpu usage windows 11, what is using my cpu, task manager alternative, startup programs, disable startup programs windows 11, slow boot windows 11, temp files cleaner, delete temp files windows, clear browser cache, clear shader cache nvidia, dxcache, d3dscache, windows update cache cleanup, softwaredistribution download folder, crash dump cleanup, recycle bin size, large file finder, duplicate file finder, ccleaner alternative, pc optimizer, windows optimizer, system cleaner, junk file cleaner, pc health check, speed up windows 11, make pc faster, antimalware service executable high cpu, memory compression high ram, svchost high cpu, portable pc cleaner, rust desktop app, tauri app</sub>
 

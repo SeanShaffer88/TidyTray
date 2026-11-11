@@ -27,7 +27,7 @@ rather than the scores adjusted.
   registry, app removal/undo, winget installs, autonomous scheduled
   firing, and the v1.1.0 additions (repair runs, low-disk trigger,
   single-instance notice) are Unverified until exercised there.
-- The removal catalog (62 entries) grows only as fast as entries can
+- The removal catalog (84 entries) grows only as fast as entries can
   be verified; runtime/framework packages (VCLibs, UI.Xaml, Store
   itself is Advanced-only) are deliberately excluded or badged.
 

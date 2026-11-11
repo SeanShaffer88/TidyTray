@@ -1,5 +1,33 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- The Tweaks catalog grows from 10 to 32 toggles. A new **App
+  permissions** group can deny apps access to the camera, microphone,
+  location, contacts, calendar, email, messages, call history,
+  account info, radios, notifications and the Documents library; ten
+  more privacy and behavior toggles join it, including app-launch
+  tracking, error reporting, feedback requests, online speech
+  recognition, typing personalization, clipboard history and cloud
+  sync, suggested-app installs, Aero Shake and detailed sign-in
+  messages. The registry engine now supports text values as well as
+  numbers, with the same preview, restore point and undo discipline;
+  undo records written by earlier versions still load.
+- The bundled-app removal catalog grows from 62 to 84 apps (Sway,
+  Whiteboard, Journal, Power BI, Remote Desktop, the retired Bing and
+  Office Mobile apps, and more), with the same risk badges and
+  reinstall sources.
+
+### Fixed
+
+- Release builds now ignore the `TIDY_DEMO` environment variable, so
+  demo data can only ever appear in development builds.
+- The README and the local build script now describe TidyTray and
+  its actual release files throughout (several passages still
+  described the upstream app and a package that was never shipped).
+
 ## 1.1.0 — 2026-11-11
 
 ### Fixed — critical
