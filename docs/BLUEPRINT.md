@@ -658,7 +658,7 @@ A dedicated test suite enforces safety invariants:
 9. **UI framework within Tauri** — plain HTML/JS or a small framework? Recommend plain + minimal CSS to keep binary small and attack surface low.
 10. **Quarantine encryption** — should quarantined files be encrypted at rest? Recommend no (transparency > security here; users should be able to inspect).
 
-**Implementation note (2026-11-11 review):** the low-disk trigger specified in §8/§10 is **not implemented** in v1.0.0 — `low_disk_trigger_gb` exists in the config schema but no code reads it. Whether to implement it or remove the field is an open owner decision; until then the field is inert and the UI does not expose it.
+**Implementation note (updated 2026-11-11, v1.1.0):** the low-disk trigger is now implemented — while the app is resident, free space is checked once a minute and a gated run starts when it drops below `low_disk_trigger_gb` (edge-triggered, with 1 GB of hysteresis; the run still passes the pre-flight gate and the dry-run phase). A threshold of 0 disables it.
 
 ---
 

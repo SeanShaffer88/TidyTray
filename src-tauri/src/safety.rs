@@ -228,6 +228,15 @@ fn run_inner(
     })
 }
 
+/// The blueprint's low-disk trigger: a gated run is due when free
+/// space on the system drive drops below the configured threshold.
+/// A threshold of 0 disables the trigger. The run it starts goes
+/// through the same pre-flight gate and dry-run phase as every other
+/// trigger — this predicate only decides *when to try*.
+pub fn low_disk_due(free_space_gb: f64, threshold_gb: u64) -> bool {
+    threshold_gb > 0 && free_space_gb.is_finite() && free_space_gb < threshold_gb as f64
+}
+
 /// Entry for `--autonomous-run` (Task Scheduler). Exit codes: 0 ran or
 /// cleanly skipped / not enabled, 2 on error.
 pub fn headless_autonomous_run() -> i32 {
@@ -272,6 +281,14 @@ mod tests {
         let rt = SafetyRuntime::new();
         assert!(!rt.is_running());
         assert!(!rt.request_cancel(), "no run in progress to cancel");
+    }
+
+    #[test]
+    fn low_disk_trigger_respects_threshold_and_zero_disable() {
+        assert!(low_disk_due(9.9, 10));
+        assert!(!low_disk_due(10.0, 10));
+        assert!(!low_disk_due(0.5, 0), "zero threshold disables the trigger");
+        assert!(!low_disk_due(f64::INFINITY, 10));
     }
 
     #[test]

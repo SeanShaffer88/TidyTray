@@ -100,9 +100,29 @@ discipline — the autonomous engine never touches it:
 - Undo restores exact priors, including deleting values that did not
   exist before the change.
 
+## Tier 2 (system repair)
+
+- Only two fixed actions exist — System File Checker (`sfc /scannow`)
+  and component-store repair (DISM `/RestoreHealth`) — run elevated
+  on demand from the Tweaks screen or `--repair sfc|dism`.
+- The elevated helper **re-validates the action against the catalog**
+  before running anything; commands are fixed argument arrays — no
+  shell, and no user-supplied text ever reaches the process line.
+- The tools' full output is kept as a repair log in the log folder,
+  and every run is audit-logged. There is no undo artifact because
+  the operation is itself the repair.
+
+## Addendum (v1.1.0)
+
+- **Single instance:** a second GUI launch shows an "already running"
+  notice and exits (hand-rolled named mutex, no new dependency).
+- **Low-disk trigger:** when free space drops below the configured
+  threshold, a run may *start* — it still passes the same pre-flight
+  gate, dry-run phase, and category limits as every other run.
+
 ## Tier 2 (app removal and installs)
 
-- The **removal catalog is fixed in the build** (26 bundled apps with
+- The **removal catalog is fixed in the build** (62 bundled apps with
   Safe/Caution/Advanced badges). Windows-critical packages and core
   utilities are never listed. Callers — UI, CLI, or the elevated helper
   itself — can only ever remove catalog packages: the helper re-checks

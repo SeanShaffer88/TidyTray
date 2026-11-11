@@ -1,6 +1,46 @@
 # Changelog
 
-## Unreleased
+## 1.1.0 — 2026-11-11
+
+### Fixed — critical
+- **Tweaks and Apps screens now load live data.** Two environment
+  flags those screens rely on were never defined, so in 1.0.0 they
+  silently stayed on their built-in preview data and their Apply,
+  Undo, Remove and Install actions did nothing. The flags are
+  defined now and every action works as designed. The light/dark
+  theme choice also failed to persist for the same reason; it does
+  now.
+
+### Added
+- **System repair** on the Tweaks screen: System File Checker and
+  component-store repair (DISM), Windows' own tools run as
+  administrator from a fixed two-action set, with their full output
+  kept in the log folder. Also on the command line: `--repair sfc`
+  and `--repair dism`.
+- **Low-disk trigger:** with automatic cleanup on, a gated run now
+  also starts when free space drops below the configured threshold
+  (default 10 GB; set it to 0 to disable). The run still passes the
+  same pre-flight checks and practice phase as a scheduled run.
+- **Settings on the Cleanup screen:** start minimized, scan on
+  launch, minimum temp-file age, large-file threshold, and the safe
+  list (add/remove) — previously these existed but had no surface.
+- The bundled-app **removal catalog grows from 26 to 62 apps**, with
+  the same conservative risk badges and reinstall sources.
+- **Single instance:** launching TidyTray while it is already
+  running shows an "already running" notice instead of opening a
+  second copy.
+- Command-line modes now print their output when run from a
+  terminal (the app attaches to the parent console).
+
+### Changed
+- Every switch in the app is now a real button: focusable,
+  keyboard-operable, and announced correctly by screen readers.
+- Safety-screen actions report failures inline on the screen
+  instead of popup alerts or silence.
+- While the window is hidden in the tray, the interface refresh
+  pauses and process sampling slows to a tenth of its rate.
+- If the program is moved, the scheduled cleanup task re-points
+  itself at the new location the next time the app starts.
 
 ### Fixed — post-release review batch
 - The Tweaks elevated helper now re-validates its batch against the

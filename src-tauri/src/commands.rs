@@ -603,6 +603,28 @@ pub fn apps_delete_profile(name: String) -> TidyResult<Vec<crate::apps::Profile>
     Ok(crate::apps::load_profiles(&crate::appconfig::data_dir()))
 }
 
+/// The fixed system-repair catalog (SFC / DISM).
+#[tauri::command]
+pub fn repair_list() -> Vec<crate::repair::RepairActionState> {
+    crate::repair::action_states()
+}
+
+/// Runs one repair action elevated; can take many minutes, so it
+/// runs on a blocking thread like the other long operations.
+#[tauri::command]
+pub async fn repair_run(action: String) -> TidyResult<crate::repair::RepairOutcome> {
+    let outcome = tauri::async_runtime::spawn_blocking(move || {
+        crate::repair::run_repair(
+            &crate::appconfig::data_dir(),
+            &crate::appconfig::logs_dir(),
+            &action,
+        )
+    })
+    .await
+    .map_err(|e| TidyError::Other(e.to_string()))?;
+    Ok(outcome)
+}
+
 /// Opens the audit-log folder in Explorer.
 #[tauri::command]
 pub fn safety_open_logs() -> TidyResult<()> {

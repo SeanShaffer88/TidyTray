@@ -86,6 +86,45 @@ pub fn remove() -> Result<(), String> {
     }
 }
 
+/// Extracts the action command from a task's XML definition
+/// (`schtasks /Query /XML`). Pure string work, tested.
+pub fn task_command(xml: &str) -> Option<String> {
+    let start = xml.find("<Command>")? + "<Command>".len();
+    let end = xml[start..].find("</Command>")? + start;
+    let cmd = xml[start..end].trim().trim_matches('"');
+    if cmd.is_empty() {
+        None
+    } else {
+        Some(cmd.to_string())
+    }
+}
+
+/// The executable path the installed task currently points at.
+pub fn installed_exe() -> Option<std::path::PathBuf> {
+    let out = Command::new("schtasks")
+        .args(["/Query", "/TN", TASK_NAME, "/XML"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    task_command(&String::from_utf8_lossy(&out.stdout)).map(std::path::PathBuf::from)
+}
+
+/// Re-installs the task when it points at a different executable than
+/// the running one (a portable copy that was moved, an install that
+/// changed location). Returns true when a heal happened. Without this,
+/// a moved portable build leaves a schedule that fails invisibly.
+pub fn heal_if_moved(schedule: &Schedule) -> bool {
+    let (Some(installed), Ok(current)) = (installed_exe(), std::env::current_exe()) else {
+        return false;
+    };
+    if installed == current {
+        return false;
+    }
+    install(schedule).is_ok()
+}
+
 /// Whether the task currently exists.
 pub fn is_installed() -> bool {
     Command::new("schtasks")
@@ -132,6 +171,13 @@ mod tests {
         assert!(args.windows(2).any(|w| w == ["/SC", "DAILY"]));
         assert!(!args.iter().any(|a| a == "/D"));
         assert!(args.windows(2).any(|w| w == ["/ST", "22:00"]));
+    }
+
+    #[test]
+    fn task_command_extracts_the_action_path() {
+        let xml = "<Task><Actions><Exec><Command>\"C:\\Apps\\TidyTray.exe\"</Command><Arguments>--autonomous-run</Arguments></Exec></Actions></Task>";
+        assert_eq!(task_command(xml).as_deref(), Some("C:\\Apps\\TidyTray.exe"));
+        assert_eq!(task_command("<Task></Task>"), None);
     }
 
     #[test]
