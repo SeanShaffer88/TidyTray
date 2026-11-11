@@ -76,6 +76,9 @@ pub struct CleanReport {
     pub dry_run: bool,
     pub freed_bytes: u64,
     pub removed_files: u64,
+    /// Files moved into quarantine by a real run (equal to removed_files
+    /// unless a move failed); they stay restorable for the retention window.
+    pub quarantined_files: u64,
     pub skipped_in_use: u64,
     pub skipped_protected: u64,
     pub per_category: Vec<(String, u64)>,
@@ -87,13 +90,22 @@ fn env_path(p: &str) -> Option<PathBuf> {
 
 /// Chromium keeps one cache per profile ("Default", "Profile 1", ...).
 fn chromium_caches(user_data: &str) -> Vec<PathBuf> {
-    let Some(base) = env_path(user_data) else { return vec![] };
-    let Ok(entries) = fs::read_dir(&base) else { return vec![] };
+    let Some(base) = env_path(user_data) else {
+        return vec![];
+    };
+    let Ok(entries) = fs::read_dir(&base) else {
+        return vec![];
+    };
     let mut out = Vec::new();
     for e in entries.flatten() {
         let name = e.file_name().to_string_lossy().to_string();
         if name == "Default" || name.starts_with("Profile ") {
-            for sub in ["Cache", "Code Cache", "GPUCache", "Service Worker\\CacheStorage"] {
+            for sub in [
+                "Cache",
+                "Code Cache",
+                "GPUCache",
+                "Service Worker\\CacheStorage",
+            ] {
                 out.push(e.path().join(sub));
             }
         }
@@ -104,7 +116,9 @@ fn chromium_caches(user_data: &str) -> Vec<PathBuf> {
 }
 
 fn firefox_caches() -> Vec<PathBuf> {
-    let Some(base) = env_path(r"%LOCALAPPDATA%\Mozilla\Firefox\Profiles") else { return vec![] };
+    let Some(base) = env_path(r"%LOCALAPPDATA%\Mozilla\Firefox\Profiles") else {
+        return vec![];
+    };
     fs::read_dir(base)
         .map(|it| it.flatten().map(|e| e.path().join("cache2")).collect())
         .unwrap_or_default()
@@ -119,7 +133,9 @@ pub fn default_targets(min_temp_age_hours: u64) -> Vec<Target> {
     let day = Duration::from_secs(min_temp_age_hours * 3600);
     let mut browser = chromium_caches(r"%LOCALAPPDATA%\Google\Chrome\User Data");
     browser.extend(chromium_caches(r"%LOCALAPPDATA%\Microsoft\Edge\User Data"));
-    browser.extend(chromium_caches(r"%LOCALAPPDATA%\BraveSoftware\Brave-Browser\User Data"));
+    browser.extend(chromium_caches(
+        r"%LOCALAPPDATA%\BraveSoftware\Brave-Browser\User Data",
+    ));
     browser.extend(firefox_caches());
     vec![
         Target {
@@ -219,7 +235,10 @@ impl Tally {
             return; // only files >= 1 MiB are worth listing
         }
         if let Ok(mut top) = self.largest.lock() {
-            top.push(FileSample { path: path.to_string_lossy().into_owned(), bytes });
+            top.push(FileSample {
+                path: path.to_string_lossy().into_owned(),
+                bytes,
+            });
             top.sort_by_key(|s| std::cmp::Reverse(s.bytes));
             top.truncate(5);
         }
@@ -240,7 +259,10 @@ pub fn walk_parallel<F>(roots: Vec<(usize, PathBuf)>, threads: usize, visit: F)
 where
     F: Fn(usize, &Path, &fs::Metadata) + Send + Sync,
 {
-    let queue = Arc::new(Queue { dirs: Mutex::new((roots.into_iter().collect(), 0)), ready: Condvar::new() });
+    let queue = Arc::new(Queue {
+        dirs: Mutex::new((roots.into_iter().collect(), 0)),
+        ready: Condvar::new(),
+    });
     thread::scope(|scope| {
         for _ in 0..threads.max(1) {
             let queue = Arc::clone(&queue);
@@ -313,14 +335,17 @@ fn old_enough(meta: &fs::Metadata, min_age: Duration, now: SystemTime) -> bool {
 fn name_ok(target: &Target, path: &Path) -> bool {
     match target.name_filter {
         None => true,
-        Some(f) => path
-            .file_name()
-            .is_some_and(|n| crate::safelist::wildcard_match(f, &n.to_string_lossy().to_lowercase())),
+        Some(f) => path.file_name().is_some_and(|n| {
+            crate::safelist::wildcard_match(f, &n.to_string_lossy().to_lowercase())
+        }),
     }
 }
 
 pub fn worker_count() -> usize {
-    thread::available_parallelism().map(|n| n.get()).unwrap_or(4).clamp(2, 12)
+    thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4)
+        .clamp(2, 12)
 }
 
 fn job_list(targets: &[Target], safe: &SafeList) -> Vec<(usize, PathBuf)> {
@@ -360,7 +385,11 @@ pub fn scan(targets: &[Target], safe: &SafeList, unchecked: &[String]) -> ScanRe
             bytes: tally.bytes.into_inner(),
             files: tally.files.into_inner(),
             protected: tally.protected.into_inner(),
-            roots: t.roots.iter().map(|r| r.to_string_lossy().into_owned()).collect(),
+            roots: t
+                .roots
+                .iter()
+                .map(|r| r.to_string_lossy().into_owned())
+                .collect(),
             largest: tally.largest.into_inner().unwrap_or_default(),
             selected: !unchecked.iter().any(|u| u == t.id),
         })
@@ -374,42 +403,68 @@ pub fn scan(targets: &[Target], safe: &SafeList, unchecked: &[String]) -> ScanRe
     }
 }
 
-/// Deletes files in the selected categories. With `dry_run` nothing is removed:
-/// the walk runs exactly the same way and only the counters are reported.
-/// Folders themselves (and the category roots) are always kept.
-pub fn clean(targets: &[Target], selected: &[String], safe: &SafeList, dry_run: bool) -> CleanReport {
-    let chosen: Vec<Target> = targets.iter().filter(|t| selected.iter().any(|s| s == t.id)).cloned().collect();
+/// Cleans the selected categories by moving files into `quarantine` under
+/// `run_id` (blueprint M3: Smart Clean no longer deletes directly). With
+/// `dry_run` nothing is moved: the walk runs exactly the same way and only
+/// the counters are reported. Folders themselves (and the category roots)
+/// are always kept.
+pub fn clean(
+    targets: &[Target],
+    selected: &[String],
+    safe: &SafeList,
+    dry_run: bool,
+    quarantine: &crate::quarantine::Quarantine,
+    run_id: &str,
+) -> CleanReport {
+    let chosen: Vec<Target> = targets
+        .iter()
+        .filter(|t| selected.iter().any(|s| s == t.id))
+        .cloned()
+        .collect();
     let now = SystemTime::now();
     let freed: Vec<AtomicU64> = chosen.iter().map(|_| AtomicU64::new(0)).collect();
     let (removed, in_use, protected) = (AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0));
-    walk_parallel(job_list(&chosen, safe), worker_count(), |idx, path, meta| {
-        let target = &chosen[idx];
-        if !name_ok(target, path) || !old_enough(meta, target.min_age, now) {
-            return;
-        }
-        if safe.protects(path).is_some() {
-            protected.fetch_add(1, Ordering::Relaxed);
-            return;
-        }
-        if target.id == "recycle-bin" && !dry_run {
-            // TODO(owner): call SHEmptyRecycleBinW (needs the Win32_UI_Shell feature)
-            // instead of deleting $R/$I pairs by hand, so Explorer stays in sync.
-            return;
-        }
-        let ok = dry_run || fs::remove_file(path).is_ok();
-        if ok {
-            freed[idx].fetch_add(meta.len(), Ordering::Relaxed);
-            removed.fetch_add(1, Ordering::Relaxed);
-        } else {
-            in_use.fetch_add(1, Ordering::Relaxed);
-        }
-    });
-    let per_category: Vec<(String, u64)> =
-        chosen.iter().zip(&freed).map(|(t, f)| (t.id.to_string(), f.load(Ordering::Relaxed))).collect();
+    walk_parallel(
+        job_list(&chosen, safe),
+        worker_count(),
+        |idx, path, meta| {
+            let target = &chosen[idx];
+            if !name_ok(target, path) || !old_enough(meta, target.min_age, now) {
+                return;
+            }
+            if safe.protects(path).is_some() {
+                protected.fetch_add(1, Ordering::Relaxed);
+                return;
+            }
+            if target.id == "recycle-bin" && !dry_run {
+                // TODO(owner): call SHEmptyRecycleBinW (needs the Win32_UI_Shell feature)
+                // instead of deleting $R/$I pairs by hand, so Explorer stays in sync.
+                return;
+            }
+            let ok = if dry_run {
+                true
+            } else {
+                quarantine.move_file(run_id, target.id, path).is_ok()
+            };
+            if ok {
+                freed[idx].fetch_add(meta.len(), Ordering::Relaxed);
+                removed.fetch_add(1, Ordering::Relaxed);
+            } else {
+                in_use.fetch_add(1, Ordering::Relaxed);
+            }
+        },
+    );
+    let per_category: Vec<(String, u64)> = chosen
+        .iter()
+        .zip(&freed)
+        .map(|(t, f)| (t.id.to_string(), f.load(Ordering::Relaxed)))
+        .collect();
+    let removed_files = removed.into_inner();
     CleanReport {
         dry_run,
         freed_bytes: per_category.iter().map(|(_, b)| b).sum(),
-        removed_files: removed.into_inner(),
+        removed_files,
+        quarantined_files: if dry_run { 0 } else { removed_files },
         skipped_in_use: in_use.into_inner(),
         skipped_protected: protected.into_inner(),
         per_category,
@@ -423,8 +478,20 @@ pub fn sample_report() -> ScanReport {
         ("temp", "Temporary files", Risk::None, 4.12, 18_420),
         ("browser", "Browser caches", Risk::Low, 3.05, 41_337),
         ("shader", "Shader caches", Risk::Low, 2.36, 3_104),
-        ("windows-update", "Windows Update cache", Risk::Review, 1.74, 212),
-        ("crash-dumps", "Crash dumps & error reports", Risk::None, 0.82, 37),
+        (
+            "windows-update",
+            "Windows Update cache",
+            Risk::Review,
+            1.74,
+            212,
+        ),
+        (
+            "crash-dumps",
+            "Crash dumps & error reports",
+            Risk::None,
+            0.82,
+            37,
+        ),
         ("thumbnails", "Thumbnail cache", Risk::None, 0.31, 14),
         ("recycle-bin", "Recycle Bin", Risk::Review, 0.42, 96),
     ];
@@ -490,12 +557,28 @@ mod tests {
         fs::remove_dir_all(root).unwrap();
     }
 
+    fn temp_quarantine(tag: &str) -> (PathBuf, crate::quarantine::Quarantine) {
+        let dir = std::env::temp_dir().join(format!("tidy-test-q-{tag}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let q = crate::quarantine::Quarantine::new(dir.clone());
+        (dir, q)
+    }
+
     #[test]
     fn dry_run_deletes_nothing() {
         let root = temp_tree("dry");
         let t = [target(&root)];
-        let report = clean(&t, &["temp".into()], &SafeList::with_roots(&[], &[]), true);
+        let (_qd, q) = temp_quarantine("dry");
+        let report = clean(
+            &t,
+            &["temp".into()],
+            &SafeList::with_roots(&[], &[]),
+            true,
+            &q,
+            "run-dry",
+        );
         assert_eq!(report.freed_bytes, 6000);
+        assert_eq!(report.quarantined_files, 0);
         assert!(root.join("a/b/c/three.tmp").exists());
         fs::remove_dir_all(root).unwrap();
     }
@@ -504,17 +587,43 @@ mod tests {
     fn real_clean_keeps_protected_files_and_folders() {
         let root = temp_tree("real");
         let t = [target(&root)];
-        let report = clean(&t, &["temp".into()], &SafeList::with_roots(&[], &[]), false);
+        let (qd, q) = temp_quarantine("real");
+        let report = clean(
+            &t,
+            &["temp".into()],
+            &SafeList::with_roots(&[], &[]),
+            false,
+            &q,
+            "run-real",
+        );
         assert_eq!(report.removed_files, 3);
+        assert_eq!(report.quarantined_files, 3);
         assert!(root.join("a/b/keep.kdbx").exists());
         assert!(root.join("a/b/c").is_dir());
+        // Moved, not deleted: every file is in quarantine and restorable.
+        assert!(!root.join("one.tmp").exists());
+        let entries = q.entries();
+        assert_eq!(entries.len(), 3);
+        let restored = q
+            .restore(std::path::Path::new(&entries[0].quarantine_path))
+            .unwrap();
+        assert!(restored.exists());
         fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(qd).unwrap();
     }
 
     #[test]
     fn unselected_categories_are_untouched() {
         let root = temp_tree("unsel");
-        let report = clean(&[target(&root)], &["browser".into()], &SafeList::with_roots(&[], &[]), false);
+        let (_qd, q) = temp_quarantine("unsel");
+        let report = clean(
+            &[target(&root)],
+            &["browser".into()],
+            &SafeList::with_roots(&[], &[]),
+            false,
+            &q,
+            "run-unsel",
+        );
         assert_eq!(report.removed_files, 0);
         assert!(root.join("one.tmp").exists());
         fs::remove_dir_all(root).unwrap();
@@ -523,7 +632,10 @@ mod tests {
     #[test]
     fn sample_report_totals_add_up() {
         let r = sample_report();
-        assert_eq!(r.total_bytes, r.categories.iter().map(|c| c.bytes).sum::<u64>());
+        assert_eq!(
+            r.total_bytes,
+            r.categories.iter().map(|c| c.bytes).sum::<u64>()
+        );
         assert!(r.total_bytes > 12 * 1024 * 1024 * 1024);
     }
 }
