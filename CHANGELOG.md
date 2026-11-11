@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- M3: Smart Clean now moves files to quarantine instead of deleting them.
+  Every cleaning path in the app is reversible for the retention window
+  (7 days by default); Smart Clean runs are audit-logged, expired
+  quarantine content is purged under the configured retention, and the
+  Cleanup screen reports "moved to quarantine" rather than claiming the
+  space was freed. Quarantine moves are internally serialized so the
+  parallel scanner can share one quarantine safely.
+
 - M2 Safety screen: a Safety section in the main window — run status with
   dry-run progress, Run/Pause controls, autonomous schedule and pause
   preferences, per-category toggles, quarantine review with one-click
