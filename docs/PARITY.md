@@ -34,7 +34,7 @@ missing), **Not started**, **Excluded** (Tier 3, will not be built).
 |---|---|
 | M2 Autonomous loop (scheduler, pre-flight checks, tray kill switch, dry-run opt-in flow) | Backend complete — Task Scheduler task via schtasks (weekly/daily), battery/fullscreen pre-flight gate, tray Run/Pause items + status line, `--autonomous-run` / `--clean-now` / `--status` CLI, autonomous enable gated on the dry-run phase and installing the task. Safety screen followed in the M2 UI slice (owner-approved design) |
 | M3 Tier 1 categories complete on the Windows test matrix | Partial — all 9 categories are in the manifest; field matrix not yet run |
-| M4 Tier 2 foundation (preview/diff, restore point, undo artifacts, elevated helper) | Not started |
+| M4 Tier 2 foundation (preview/diff, restore point, undo artifacts, elevated helper) | Done (M4) | tier2.rs: RegStore abstraction (winreg + in-memory fake), 10-toggle catalog, detect/plan with priors captured, one elevated helper run (--tier2-elevated) covers the restore point + all HKLM writes, undo batches record exact prior values (absent values are deleted on undo); Tweaks screen per the approved design (staging, preview sheet, Recommended preset, Undo, search); CLI --tweaks/--tweak-apply/--tweak-undo expose the same operations |
 | M5 Tier 2 full catalog (incl. the 2026-11-10 mining from W10Privacy, ShutUp10++, Winaero Tweaker and XToolbox — see BLUEPRINT.md §2) | Not started |
 | M6 Polish & release (AV allowlisting, standard release shape, docs) | Not started |
 

@@ -59,6 +59,26 @@ is manual, previewed, logged, and reversible.**
   deletion and no registry calls;
 - configuration defaults keep autonomous mode off and the dry-run phase on.
 
+## Tier 2 (manual tweaks)
+
+Tier 2 changes system state, so it follows a stricter, fully manual
+discipline — the autonomous engine never touches it:
+
+- Changes are **staged** in the UI first; nothing is written until the
+  user reviews an exact preview (current value → new value, in plain
+  words) and confirms.
+- Before anything is written, the prior value of every registry value
+  is recorded. Applying creates a System Restore point when possible
+  *and* stores those priors as an undo batch, so Undo works even when
+  no restore point could be created (for example, System Restore off).
+- Machine-level writes and the restore point happen in a single
+  elevated helper run of the app itself; if the user declines the
+  Windows prompt, those changes are reported as failed — never silently
+  retried, never partially claimed.
+- Every applied or reverted change is written to the audit log.
+- Undo restores exact priors, including deleting values that did not
+  exist before the change.
+
 ## Honest limits
 
 - The pre-move "file is in use" check is best-effort. If a move fails, the

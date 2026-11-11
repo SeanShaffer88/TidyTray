@@ -651,7 +651,7 @@ A dedicated test suite enforces safety invariants:
 2. **Code signing** — RESOLVED (2026-11-10): no code signing. Binaries ship unsigned per the owner's standing rule; AV allowlisting submissions use the unsigned release binary.
 3. **Manifest update strategy** — v1 ships manifest only with app updates (safe but slow). Consider a v1.1 signed remote manifest with a conservative rollout, gated by safety tests.
 4. **Elevated helper protocol** — JSON over stdin/stdout vs. named pipe; pick one and freeze for M4.
-5. **Winget dependency** — require winget at install time, or bundle a fallback (Chocolatey / direct downloads)? Recommend: detect winget; disable install tab if absent.
+5. **Winget dependency** — RESOLVED (owner, 2026-11-10): winget is used as the install *tool* in the M5 catalog (detect it; disable the install actions if absent). This is unrelated to distribution: TidyTray itself is never submitted to winget or Chocolatey (owner rule, §16 note in the header).
 6. **Localization** — English-only v1; strings externalized from day one.
 7. **Crash reporting** — v1: none, or opt-in local dump viewer? Recommend local-only for v1.
 8. **Windows version support** — drop Windows 10 <1809 or support? Recommend 1809+ only.

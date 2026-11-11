@@ -177,7 +177,7 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .cat .size.zero { color: var(--green-ink); }
 .cat .chev { color: var(--ink3); width: 16px; height: 16px; transition: transform .2s; }
 .cat.open .chev { transform: rotate(90deg); }
-.sub { padding: 8px 20px 8px 84px; display: flex; color: var(--ink2); font-size: 12px; background: #FBFBFC; }
+.sub { padding: 8px 20px 8px 84px; display: flex; color: var(--ink2); font-size: 12px; background: var(--fill); }
 .sub span:last-child { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--ink); }
 .foot { display: flex; align-items: center; gap: 18px; padding: 14px 20px; border-top: 1px solid var(--line); background: #FBFBFC; border-radius: 0 0 12px 12px; }
 .foot .note { display: flex; gap: 7px; align-items: center; color: var(--ink2); font-size: 12px; }
@@ -231,3 +231,28 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .themebtn { margin-left: auto; width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; color: var(--ink2); }
 .themebtn:hover { background: var(--hover); color: var(--ink); }
 .themebtn svg { width: 15px; height: 15px; }
+
+/* Tier 2 Tweaks screen (blueprint M4) */
+.main { position: relative; }
+.grp { font: 600 12px var(--t); letter-spacing: .04em; text-transform: uppercase; color: var(--ink2); margin: 16px 2px 7px; }
+.tlist { padding: 4px 13px; }
+.trow { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line2); }
+.trow:last-child { border-bottom: none; }
+.trow .tt { flex: 1; min-width: 0; }
+.trow .tt b { font-size: 13px; font-weight: 600; display: block; }
+.trow .tt span { color: var(--ink2); font-size: 12px; display: block; margin-top: 1px; }
+.trow .toggle { cursor: pointer; }
+.tag.stg { background: var(--amber-soft); color: var(--amber); }
+.tag.app { background: var(--green-soft); color: var(--green-ink); }
+.toolbar { display: flex; gap: 8px; align-items: center; margin: 14px 0 4px; }
+.toolbar .search { flex: 1; height: 32px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 0 12px; font: 13px var(--t); color: var(--ink); }
+.stagebar { position: sticky; bottom: 12px; margin-top: 16px; background: var(--side); color: var(--ink); border: 1px solid var(--line); border-radius: 12px; padding: 11px 13px; display: flex; align-items: center; gap: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+.stagebar .sp { flex: 1; }
+.sheet { position: absolute; top: 0; right: 0; bottom: 0; width: 400px; background: var(--card); border-left: 1px solid var(--line); box-shadow: -16px 0 40px rgba(0,0,0,.35); padding: 20px; overflow: auto; z-index: 30; }
+.sheet h3 { font: 600 17px var(--d); margin-bottom: 2px; }
+.sheet .sheet-sub { color: var(--ink2); font-size: 12.5px; margin-bottom: 14px; }
+.chg { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
+.chg b { font-size: 13px; }
+.chg .vals { font: 12px var(--m); color: var(--ink2); margin-top: 3px; }
+.chg .vals em { font-style: normal; color: var(--amber); }
+.chg .vals strong { color: var(--green-ink); }
