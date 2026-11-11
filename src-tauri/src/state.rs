@@ -37,7 +37,7 @@ impl Serialize for TidyError {
 
 pub type TidyResult<T> = Result<T, TidyError>;
 
-/// User settings stored in `%APPDATA%\Tidy\settings.json`.
+/// User settings stored in `%APPDATA%\TidyTray\settings.json`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Settings {
@@ -75,7 +75,7 @@ impl Default for Settings {
 impl Settings {
     pub fn path() -> PathBuf {
         let base = std::env::var_os("APPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
-        base.join("Tidy").join("settings.json")
+        base.join("TidyTray").join("settings.json")
     }
 
     /// Loads settings, falling back to defaults when the file is missing or broken.

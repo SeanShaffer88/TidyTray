@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.0.0 — 2026-11-11
+
+First TidyTray release. TidyTray is a safety-first fork of Tidy: the original cleaner, health monitor and startup manager, plus a reversible-by-design safety layer.
+
 ### Added — Tier 2 catalog (M5)
 - New **Apps** section with Remove and Install tabs.
 - Remove: a 26-app bundled-app catalog with risk badges and per-app

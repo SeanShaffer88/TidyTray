@@ -1,5 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-//! Tidy - PC cleanup & health for Windows.
+//! TidyTray - PC cleanup & health for Windows.
 
 mod appconfig;
 mod apps;
@@ -68,14 +68,14 @@ fn show_main(app: &AppHandle) {
 }
 
 fn build_tray(app: &tauri::App) -> tauri::Result<()> {
-    let open = MenuItem::with_id(app, "open", "Open Tidy", true, None::<&str>)?;
+    let open = MenuItem::with_id(app, "open", "Open TidyTray", true, None::<&str>)?;
     let scan = MenuItem::with_id(app, "scan", "Run Smart Scan", true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
     let safety_status = MenuItem::with_id(app, "safety_status", safety_status_text(), false, None::<&str>)?;
     let safety_clean = MenuItem::with_id(app, "safety_clean", "Run Safety Cleanup", true, None::<&str>)?;
     let safety_pause = MenuItem::with_id(app, "safety_pause", "Pause Safety Cleanup", true, None::<&str>)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit Tidy", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit TidyTray", true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
         &[&open, &scan, &sep, &safety_status, &safety_clean, &safety_pause, &sep2, &quit],
@@ -84,7 +84,7 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
         *guard = Some(safety_status);
     }
     let mut tray = TrayIconBuilder::with_id("tidy-tray")
-        .tooltip("Tidy")
+        .tooltip("TidyTray")
         .menu(&menu)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "open" => show_main(app),
@@ -255,7 +255,7 @@ fn main() {
                     let _ = win.minimize();
                 }
             }
-            log::info!("Tidy started, dry-run = {}", settings.dry_run);
+            log::info!("TidyTray started, dry-run = {}", settings.dry_run);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -303,5 +303,5 @@ fn main() {
             commands::check_path,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running Tidy");
+        .expect("error while running TidyTray");
 }

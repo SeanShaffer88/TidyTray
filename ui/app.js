@@ -1,4 +1,4 @@
-// Tidy UI - plain JS, no build step. Runs inside Tauri or in a browser with mock data.
+// TidyTray UI - plain JS, no build step. Runs inside Tauri or in a browser with mock data.
 
 'use strict';
 

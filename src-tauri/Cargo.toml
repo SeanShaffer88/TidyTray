@@ -1,7 +1,7 @@
 [package]
 name = "tidy"
 version = "1.0.0"
-description = "Tidy - open source PC cleanup and health monitor for Windows"
+description = "TidyTray - open source PC cleanup and health monitor for Windows"
 authors = ["Tidy contributors"]
 license = "MIT"
 edition = "2021"

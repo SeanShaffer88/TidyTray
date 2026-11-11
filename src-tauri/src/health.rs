@@ -212,7 +212,7 @@ pub fn estimate_segments(used: u64, is_system: bool, cleanable: u64) -> Vec<Segm
 pub fn tray_summary(sys: &System) -> String {
     let m = memory(sys);
     let free = drives(0).first().map(|d| d.free / GIB).unwrap_or(0);
-    format!("Tidy - {free} GB free, RAM {}%", m.load_percent)
+    format!("TidyTray - {free} GB free, RAM {}%", m.load_percent)
 }
 
 #[cfg(test)]
