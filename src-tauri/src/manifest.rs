@@ -131,20 +131,59 @@ impl std::fmt::Display for ManifestError {
 
 impl std::error::Error for ManifestError {}
 
+/// Serializes a JSON value canonically: object keys sorted at every
+/// depth, no whitespace, scalars in serde_json's normal form. The
+/// output matches what `serde_json::to_string` produces for a value
+/// held in sorted-key maps — which is how the manifest's stored
+/// checksum was authored — without relying on that map behavior.
+fn canonical_json(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::Object(map) => {
+            let mut keys: Vec<&String> = map.keys().collect();
+            keys.sort();
+            let mut out = String::from("{");
+            for (i, k) in keys.iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                out.push_str(&serde_json::to_string(k).unwrap_or_default());
+                out.push(':');
+                out.push_str(&canonical_json(&map[*k]));
+            }
+            out.push('}');
+            out
+        }
+        serde_json::Value::Array(items) => {
+            let mut out = String::from("[");
+            for (i, item) in items.iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                out.push_str(&canonical_json(item));
+            }
+            out.push(']');
+            out
+        }
+        other => serde_json::to_string(other).unwrap_or_default(),
+    }
+}
+
 impl Manifest {
     /// Parses and fully validates a manifest document.
     pub fn parse(json: &str) -> Result<Self, ManifestError> {
         let value: serde_json::Value =
             serde_json::from_str(json).map_err(|e| ManifestError::Parse(e.to_string()))?;
-        // Checksum over the canonical form of the categories block: parsed
-        // values re-serialise with sorted keys and no whitespace (serde_json's
-        // default map ordering), which is exactly how the stored checksum was
-        // produced when the manifest was authored.
+        // Checksum over the canonical form of the categories block:
+        // object keys sorted, no whitespace — produced by
+        // `canonical_json` below, explicitly, so the checksum's meaning
+        // never depends on serde_json's map implementation (a future
+        // dependency enabling its `preserve_order` feature would
+        // otherwise change the bytes under the stored checksum and
+        // disable the engine).
         let categories = value
             .get("categories")
             .ok_or_else(|| ManifestError::Parse("no categories".into()))?;
-        let canonical =
-            serde_json::to_string(categories).map_err(|e| ManifestError::Parse(e.to_string()))?;
+        let canonical = canonical_json(categories);
         let m: Manifest =
             serde_json::from_value(value).map_err(|e| ManifestError::Parse(e.to_string()))?;
         if m.checksum != sha256_hex(canonical.as_bytes()) {
@@ -284,6 +323,16 @@ pub fn real_env() -> HashMap<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn canonical_json_sorts_keys_at_every_depth() {
+        let v: serde_json::Value =
+            serde_json::from_str(r#"{"b":1,"a":{"d":4,"c":[3,{"z":0,"y":1}]}}"#).unwrap();
+        assert_eq!(
+            canonical_json(&v),
+            r#"{"a":{"c":[3,{"y":1,"z":0}],"d":4},"b":1}"#
+        );
+    }
 
     #[test]
     fn embedded_manifest_is_valid() {

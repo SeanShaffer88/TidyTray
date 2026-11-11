@@ -155,6 +155,18 @@ pub fn run_safety_once(
     {
         return Err("a safety cleanup is already running".to_string());
     }
+    // Cross-process exclusion: the scheduled headless run is a second
+    // process, and the in-process guard above cannot see it. The lock
+    // file also covers a second GUI process.
+    let _lock = match crate::runlock::acquire(&appconfig::data_dir()) {
+        Some(lock) => lock,
+        None => {
+            runtime.running.store(false, Ordering::Relaxed);
+            return Err(
+                "a safety cleanup is already running in another TidyTray process".to_string(),
+            );
+        }
+    };
     let result = run_inner(runtime, apply_requested, source);
     runtime.running.store(false, Ordering::Relaxed);
     result

@@ -104,7 +104,24 @@ pub async fn clean(state: State<'_, AppState>, categories: Vec<String>, dry_run:
     }
     let settings = state.settings();
     let dry = settings.dry_run || dry_run.unwrap_or(true) || demo_mode();
+    // Real cleans share the quarantine with the autonomous engine: take
+    // the cross-process run lock so two processes never move files into
+    // it at once. Dry runs only read, so they do not need it.
+    let _run_lock = if dry {
+        None
+    } else {
+        match crate::runlock::acquire(&crate::appconfig::data_dir()) {
+            Some(lock) => Some(lock),
+            None => {
+                return Err(TidyError::Other(
+                    "a cleaning run is already in progress in another TidyTray window or process"
+                        .to_string(),
+                ))
+            }
+        }
+    };
     let report = tauri::async_runtime::spawn_blocking(move || {
+        let _run_lock = _run_lock;
         let targets = scanner::default_targets(settings.min_temp_age_hours);
         let quarantine = crate::quarantine::Quarantine::new(crate::appconfig::quarantine_dir());
         let run_id = crate::audit::new_run_id();

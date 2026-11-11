@@ -182,7 +182,19 @@ impl Quarantine {
             fs::create_dir_all(parent)?;
         }
         if fs::rename(quarantine_path, &dest).is_err() {
+            // Cross-volume fallback gets the same discipline as
+            // move_file: the copy is size-verified before the
+            // quarantined original is removed, so an interrupted copy
+            // can never leave a truncated file in place of the real one.
+            let size = fs::metadata(quarantine_path)?.len();
             fs::copy(quarantine_path, &dest)?;
+            if fs::metadata(&dest)?.len() != size {
+                let _ = fs::remove_file(&dest);
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "copy size mismatch",
+                ));
+            }
             fs::remove_file(quarantine_path)?;
         }
         let mut index = self.load_index(&run_id);
@@ -229,20 +241,36 @@ impl Quarantine {
                 let Some(id) = run.file_name().to_str().map(|s| s.to_string()) else {
                     continue;
                 };
-                let expired = match fs::metadata(&path).and_then(|m| m.modified()) {
-                    Ok(mtime) => now
-                        .duration_since(mtime)
-                        .map(|age| age > retention)
-                        .unwrap_or(false),
-                    Err(_) => false,
+                // Expiry is judged by the newest entry timestamp in
+                // the run's index — the data the retention promise is
+                // about — not the folder mtime (restoring a file
+                // rewrites the index inside the folder and used to
+                // extend every other file's retention). Folders with
+                // no readable index fall back to their mtime.
+                let index = self.load_index(&id);
+                let newest = index
+                    .entries
+                    .iter()
+                    .filter_map(|e| crate::audit::unix_from_iso(&e.ts))
+                    .max();
+                let expired = match newest {
+                    Some(ts) => {
+                        let now_secs = now
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs())
+                            .unwrap_or(0);
+                        now_secs.saturating_sub(ts) > retention.as_secs()
+                    }
+                    None => match fs::metadata(&path).and_then(|m| m.modified()) {
+                        Ok(mtime) => now
+                            .duration_since(mtime)
+                            .map(|age| age > retention)
+                            .unwrap_or(false),
+                        Err(_) => false,
+                    },
                 };
                 if expired {
-                    freed += self
-                        .load_index(&id)
-                        .entries
-                        .iter()
-                        .map(|e| e.size)
-                        .sum::<u64>();
+                    freed += index.entries.iter().map(|e| e.size).sum::<u64>();
                     let _ = fs::remove_dir_all(&path);
                 }
             }
