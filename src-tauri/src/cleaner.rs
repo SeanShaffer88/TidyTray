@@ -90,8 +90,28 @@ pub fn expand_template_paths(template: &str, env: &HashMap<String, String>) -> V
     let Some(expanded) = expand_template(template, env) else {
         return Vec::new();
     };
-    let segments: Vec<String> = expanded.split('\\').map(|s| s.to_string()).collect();
-    expand_segments(&segments, 0, PathBuf::new())
+    let (root, segments) = split_root(&expanded);
+    expand_segments(&segments, 0, PathBuf::from(root))
+}
+
+/// Splits an expanded Windows path into its root and remaining segments.
+/// Keeping the root intact matters: joining segments onto an empty base
+/// would turn `C:\Users` into the drive-relative `C:Users`. Pure string
+/// work, so it is testable on any OS.
+fn split_root(expanded: &str) -> (String, Vec<String>) {
+    let bytes = expanded.as_bytes();
+    let is_drive = bytes.len() >= 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic();
+    if is_drive || expanded.starts_with("\\\\") {
+        if let Some(i) = expanded[2..].find('\\') {
+            let cut = i + 3; // root includes the separator after the drive/share
+            let segments = expanded[cut..].split('\\').map(|s| s.to_string()).collect();
+            return (expanded[..cut].to_string(), segments);
+        }
+    }
+    (
+        String::new(),
+        expanded.split('\\').map(|s| s.to_string()).collect(),
+    )
 }
 
 fn expand_segments(segments: &[String], idx: usize, base: PathBuf) -> Vec<PathBuf> {
@@ -440,6 +460,23 @@ mod tests {
         assert_eq!(report.total_files, 0);
         assert!(fx.base.join("TempRoot").join("old.tmp").exists());
         fs::remove_dir_all(fx.base).unwrap();
+    }
+
+    #[test]
+    fn split_root_keeps_windows_drive_root_intact() {
+        // Regression: joining segments onto an empty base produced the
+        // drive-relative `C:Users\...` on Windows (CI caught this; the
+        // Linux harness could not).
+        let (root, segs) = split_root(r"C:\Users\a\AppData\Local\Temp");
+        assert_eq!(root, r"C:\");
+        assert_eq!(segs, vec!["Users", "a", "AppData", "Local", "Temp"]);
+        let (root, segs) = split_root(r"D:\Cache");
+        assert_eq!(root, r"D:\");
+        assert_eq!(segs, vec!["Cache"]);
+        // Non-Windows-shaped strings keep the plain split.
+        let (root, segs) = split_root("/tmp/x\\y");
+        assert_eq!(root, "");
+        assert_eq!(segs, vec!["/tmp/x", "y"]);
     }
 
     #[test]
