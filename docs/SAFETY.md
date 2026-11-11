@@ -40,11 +40,23 @@ is manual, previewed, logged, and reversible.**
    30. Per-category and per-run size caps bound every run.
 7. **Dry-run first.** The first 3 runs on any machine are dry runs that only
    report. Autonomous mode starts disabled and needs an explicit opt-in.
-8. **Kill switch.** A run checks a cancellation flag for every file and
-   stops within seconds. "Pause autonomous cleanup" in the tray menu uses it.
+8. **Kill switch.** A run checks a cancellation flag while collecting
+   candidates as well as for every file it processes, and stops within
+   seconds. "Pause autonomous cleanup" in the tray menu uses it.
 9. **Everything is logged.** Each run writes append-only JSONL entries
-   (run start/end, every move, every skip, restores and purges) to
-   `%LOCALAPPDATA%\TidyTray\Logs`.
+   (run start/end, every move, restores and purges) to
+   `%LOCALAPPDATA%\TidyTray\Logs`. Files that are skipped (too new,
+   over a size cap, in use) are logged as a per-category summary with a
+   few sample paths, so a run over tens of thousands of files stays
+   readable. Daily log files are kept for 30 days.
+11. **One run at a time — across processes.** A lock file in the data
+    folder stops the window and the scheduled headless run (separate
+    processes) from ever moving files into the quarantine at the same
+    time; the second run reports that a run is already in progress.
+12. **Damaged config is visible.** If `config.json` cannot be parsed,
+    the original is kept as `config.json.bad`, the reset to safe
+    defaults is written to the audit log, and the app continues with
+    autonomous mode off and the dry-run phase on.
 10. **No telemetry.** Nothing is uploaded, ever. Crash reporting is
     local-only.
 
@@ -75,6 +87,15 @@ discipline — the autonomous engine never touches it:
   elevated helper run of the app itself; if the user declines the
   Windows prompt, those changes are reported as failed — never silently
   retried, never partially claimed.
+- The helper **re-validates its batch against the toggle catalog**
+  before writing anything: it can only ever touch the registry values
+  the catalog owns, and an apply batch can only write the values the
+  planner can produce for them. Batch files have unguessable names and
+  the result must echo the batch's nonce before the parent trusts it.
+- If a helper outlives the parent's wait, the timeout is reported as
+  an unknown outcome — not a clean failure — and a late result is
+  reconciled into the undo store on the next apply or undo, so changes
+  never lose their undo record.
 - Every applied or reverted change is written to the audit log.
 - Undo restores exact priors, including deleting values that did not
   exist before the change.

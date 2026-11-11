@@ -12,7 +12,7 @@ missing), **Not started**, **Excluded** (Tier 3, will not be built).
 | SAFETY / EXCLUDED docs | Done | docs/SAFETY.md, docs/EXCLUDED.md |
 | CI skeleton | Done | .github/workflows/ci.yml, safety-audit.yml |
 | Tier classification recorded | Done | .project-tier (t1b), AGENTS.md manifest |
-| Repo topics set | Not started | Owed via the GitHub web UI (API token here cannot edit About) |
+| Repo topics set | Done | Description + 10 topics set at M0 and re-verified accurate at the v1.0.0 release |
 | Strip non-essential upstream UI | Not started | Deliberately deferred: upstream features stay untouched until their Tier mapping is decided per feature |
 
 ## M1 — Safety core
@@ -37,10 +37,34 @@ missing), **Not started**, **Excluded** (Tier 3, will not be built).
 | M4 Tier 2 foundation (preview/diff, restore point, undo artifacts, elevated helper) | Done (M4) | tier2.rs: RegStore abstraction (winreg + in-memory fake), 10-toggle catalog, detect/plan with priors captured, one elevated helper run (--tier2-elevated) covers the restore point + all HKLM writes, undo batches record exact prior values (absent values are deleted on undo); Tweaks screen per the approved design (staging, preview sheet, Recommended preset, Undo, search); CLI --tweaks/--tweak-apply/--tweak-undo expose the same operations |
 | M5 Tier 2 full catalog (incl. the 2026-11-10 mining from W10Privacy, ShutUp10++, Winaero Tweaker and XToolbox — see BLUEPRINT.md §2) | Done — Apps screen (owner-approved design): 26-entry removal catalog with Safe/Caution/Advanced badges and per-app reinstall sources, detected against the real installed set; removal via one elevated helper run (restore point first, provisioned copies removed too) with undo records — winget-backed apps reinstall automatically, Store apps are reported for manual reinstall; 21-app winget install catalog with installed detection, two built-in profiles plus user-saved profiles. Honest limits: removal targets the current user plus the provisioned copy; catalogs grow from here toward the blueprint's ~90 removal entries |
 | M6 Polish & release | Done — product renamed to TidyTray everywhere (app name, binary, identifier com.tidytray.desktop, settings folder, UI brand, tray); README and changelog prepared; **v1.0.0 released** from the tag-triggered workflow (run 42976799959) with exactly TidyTray-v1.0.0-x64-Setup.exe + TidyTray-v1.0.0-x64-Portable.zip + SHA256SUMS.txt, re-downloaded and hash-verified; portable zip contains TidyTray.exe + LICENSE |
-| M6 Polish & release (AV allowlisting, standard release shape, docs) | Not started |
+
+## Post-release review fixes (2026-11-11)
+A senior-review pass over the v1.0.0 tree produced a batch of fixes with no
+intended behaviour change (full report kept with the project records):
+the Tier 2 elevated helper now re-validates its batch against the toggle
+catalog (as the apps helper already did); elevated-helper timeouts are
+reported distinctly and late results are reconciled into the undo store;
+cleaning runs take a cross-process lock so the GUI and the scheduled
+headless run cannot move files into the quarantine at the same time; the
+audit log keeps one buffered writer per run, summarizes per-file skip
+events per category, and prunes daily logs after 30 days; the kill switch
+is honored during candidate collection; quarantine retention is judged by
+the newest entry timestamp and restore verifies cross-volume copies;
+helper batch files use unguessable names with nonce-paired results; a
+corrupt config is preserved as `config.json.bad` and the reset is
+audit-logged; the manifest checksum uses explicit canonical JSON.
 
 ## Known limitations
-- Windows runtime behaviour of the safety core is **unverified** until it
-  runs on a real Windows machine; the local gate covers logic tests and a
-  Windows-target link build, CI covers the full test suite on Windows.
-- QUALITY.md scorecard is introduced at the first release gate (M6).
+- Windows runtime behaviour was **field-verified on 2026-11-11** (owner
+  captures of v1.0.0 on a real Windows 11 machine: launch, all nine
+  screens, Smart Scan on real data, the dry-run phase with recorded
+  practice runs, a scheduled run correctly skipped for a fullscreen app,
+  a populated quarantine, applied tweaks, AppX detection). Still
+  unverified: the installer run itself, a real (non-dry) clean and
+  quarantine restore, tweak undo, app removal and its undo, winget
+  installs from the catalog, and autonomous scheduled firing.
+- The blueprint's low-disk run trigger (§8) is not implemented: the
+  `low_disk_trigger_gb` config field exists but nothing reads it yet.
+  Implement-or-remove is an open decision (BLUEPRINT.md §16 note).
+- QUALITY.md scorecard was planned for the first release gate (M6) and
+  has not been introduced yet.
