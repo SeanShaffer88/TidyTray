@@ -32,7 +32,7 @@ missing), **Not started**, **Excluded** (Tier 3, will not be built).
 ## M2–M6 (blueprint roadmap)
 | Milestone | Status |
 |---|---|
-| M2 Autonomous loop (scheduler, pre-flight checks, tray kill switch, dry-run opt-in flow) | Not started — engine cancellation flag exists; scheduler/UI do not |
+| M2 Autonomous loop (scheduler, pre-flight checks, tray kill switch, dry-run opt-in flow) | Backend complete — Task Scheduler task via schtasks (weekly/daily), battery/fullscreen pre-flight gate, tray Run/Pause items + status line, `--autonomous-run` / `--clean-now` / `--status` CLI, autonomous enable gated on the dry-run phase and installing the task. Safety UI screens remain under M2's UI slice |
 | M3 Tier 1 categories complete on the Windows test matrix | Partial — all 9 categories are in the manifest; field matrix not yet run |
 | M4 Tier 2 foundation (preview/diff, restore point, undo artifacts, elevated helper) | Not started |
 | M5 Tier 2 full catalog (incl. the 2026-11-10 mining from W10Privacy, ShutUp10++, Winaero Tweaker and XToolbox — see BLUEPRINT.md §2) | Not started |

@@ -7,7 +7,10 @@ mod cleaner;
 mod commands;
 mod lockcheck;
 mod manifest;
+mod preflight;
 mod quarantine;
+mod safety;
+mod scheduler;
 #[cfg(test)]
 mod safety_tests;
 mod sha256;
@@ -27,6 +30,31 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use state::AppState;
 
+/// Tray status line text, from the last recorded safety run.
+fn safety_status_text() -> String {
+    match safety::read_last_run() {
+        Some(lr) => format!(
+            "Safety cleanup: {} \u{00b7} {} files \u{00b7} {:.1} MB{}",
+            lr.outcome,
+            lr.files,
+            lr.bytes as f64 / 1_000_000.0,
+            if lr.dry_run { " (dry run)" } else { "" }
+        ),
+        None => "Safety cleanup: never run".to_string(),
+    }
+}
+
+static SAFETY_STATUS_ITEM: std::sync::Mutex<Option<MenuItem<tauri::Wry>>> =
+    std::sync::Mutex::new(None);
+
+fn refresh_safety_status_item() {
+    if let Ok(guard) = SAFETY_STATUS_ITEM.lock() {
+        if let Some(item) = guard.as_ref() {
+            let _ = item.set_text(safety_status_text());
+        }
+    }
+}
+
 fn show_main(app: &AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
         if win.is_minimized().unwrap_or(false) {
@@ -41,8 +69,18 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, "open", "Open Tidy", true, None::<&str>)?;
     let scan = MenuItem::with_id(app, "scan", "Run Smart Scan", true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
+    let safety_status = MenuItem::with_id(app, "safety_status", safety_status_text(), false, None::<&str>)?;
+    let safety_clean = MenuItem::with_id(app, "safety_clean", "Run Safety Cleanup", true, None::<&str>)?;
+    let safety_pause = MenuItem::with_id(app, "safety_pause", "Pause Safety Cleanup", true, None::<&str>)?;
+    let sep2 = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Tidy", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&open, &scan, &sep, &quit])?;
+    let menu = Menu::with_items(
+        app,
+        &[&open, &scan, &sep, &safety_status, &safety_clean, &safety_pause, &sep2, &quit],
+    )?;
+    if let Ok(mut guard) = SAFETY_STATUS_ITEM.lock() {
+        *guard = Some(safety_status);
+    }
     let mut tray = TrayIconBuilder::with_id("tidy-tray")
         .tooltip("Tidy")
         .menu(&menu)
@@ -51,6 +89,22 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
             "scan" => {
                 show_main(app);
                 let _ = app.emit("tray-scan", ());
+            }
+            "safety_clean" => {
+                let handle = app.clone();
+                std::thread::spawn(move || {
+                    let state = handle.state::<safety::SafetyRuntime>();
+                    let runtime = safety::SafetyRuntime {
+                        cancel: state.cancel.clone(),
+                        running: state.running.clone(),
+                    };
+                    let _ = safety::run_safety_once(&runtime, true, "tray");
+                    refresh_safety_status_item();
+                });
+            }
+            "safety_pause" => {
+                // Kill switch (blueprint section 8.1): stop the current run.
+                app.state::<safety::SafetyRuntime>().request_cancel();
             }
             "quit" => app.exit(0),
             _ => {}
@@ -89,8 +143,30 @@ fn spawn_sampler(app: AppHandle) {
 }
 
 fn main() {
+    // Headless entry points (full CLI parity): the Task Scheduler task and
+    // scripts use these; they never open a window.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|a| a == "--autonomous-run") {
+        std::process::exit(safety::headless_autonomous_run());
+    }
+    if args.iter().any(|a| a == "--clean-now") {
+        std::process::exit(safety::headless_clean_now(args.iter().any(|a| a == "--apply")));
+    }
+    if args.iter().any(|a| a == "--status") {
+        let cfg = appconfig::AppConfig::load_from(&appconfig::config_path());
+        let snapshot = serde_json::json!({
+            "autonomousEnabled": cfg.autonomous.enabled,
+            "dryRunsCompleted": cfg.autonomous.dry_runs_completed,
+            "dryRunPhaseComplete": cfg.dry_run_phase_complete(),
+            "schedulerInstalled": scheduler::is_installed(),
+            "lastRun": safety::read_last_run(),
+        });
+        println!("{}", serde_json::to_string_pretty(&snapshot).unwrap_or_default());
+        return;
+    }
     tauri::Builder::default()
         .manage(AppState::new())
+        .manage(safety::SafetyRuntime::new())
         .setup(|app| {
             build_tray(app)?;
             spawn_sampler(app.handle().clone());
@@ -121,6 +197,10 @@ fn main() {
             commands::get_safe_list,
             commands::safety_status,
             commands::safety_clean_now,
+            commands::safety_cancel,
+            commands::safety_set_autonomous,
+            commands::safety_set_schedule,
+            commands::safety_set_categories,
             commands::safety_restore,
             commands::safety_purge_quarantine,
             commands::check_path,

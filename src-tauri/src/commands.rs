@@ -211,9 +211,11 @@ pub fn check_path(state: State<'_, AppState>, path: String) -> Option<&'static s
 }
 
 // ---------------------------------------------------------------------------
-// Autonomous safety core (blueprint M1): manifest-driven Tier 1 cleanup that
-// only ever moves files to quarantine. Separate from the legacy Smart Clean
-// above; the UI reaches the safety core only through these commands.
+// Autonomous safety core (blueprint M1/M2): manifest-driven Tier 1 cleanup
+// that only ever moves files to quarantine. Separate from the legacy Smart
+// Clean above; the UI reaches the safety core only through these commands.
+// All run orchestration lives in crate::safety so the tray, CLI and
+// scheduler share exactly one policy path.
 // ---------------------------------------------------------------------------
 
 #[derive(Serialize)]
@@ -231,23 +233,23 @@ pub struct SafetyCategory {
 pub struct SafetyStatus {
     pub manifest_version: String,
     pub categories: Vec<SafetyCategory>,
+    pub enabled_categories: Vec<String>,
     pub autonomous_enabled: bool,
     pub dry_runs_completed: u32,
     pub dry_run_phase_complete: bool,
     pub quarantine_files: u64,
     pub quarantine_bytes: u64,
-}
-
-fn safety_ctx() -> crate::cleaner::RunContext {
-    crate::cleaner::RunContext::new(
-        crate::manifest::real_env(),
-        crate::appconfig::quarantine_dir(),
-        crate::appconfig::logs_dir(),
-    )
+    pub running: bool,
+    pub scheduler_installed: bool,
+    pub schedule_mode: String,
+    pub schedule_day: String,
+    pub schedule_hour: u32,
+    pub last_run: Option<crate::safety::LastRun>,
+    pub preflight: crate::preflight::Facts,
 }
 
 #[tauri::command]
-pub fn safety_status() -> TidyResult<SafetyStatus> {
+pub fn safety_status(state: tauri::State<'_, crate::safety::SafetyRuntime>) -> TidyResult<SafetyStatus> {
     let manifest = crate::manifest::Manifest::embedded().map_err(|e| TidyError::Other(e.to_string()))?;
     let cfg = crate::appconfig::AppConfig::load_from(&crate::appconfig::config_path());
     let q = crate::quarantine::Quarantine::new(crate::appconfig::quarantine_dir());
@@ -264,38 +266,105 @@ pub fn safety_status() -> TidyResult<SafetyStatus> {
                 min_age_days: c.min_age_days,
             })
             .collect(),
+        enabled_categories: cfg.autonomous.categories_enabled.clone(),
         autonomous_enabled: cfg.autonomous.enabled,
         dry_runs_completed: cfg.autonomous.dry_runs_completed,
         dry_run_phase_complete: cfg.dry_run_phase_complete(),
         quarantine_files: q.entries().len() as u64,
         quarantine_bytes: q.total_size(),
+        running: state.is_running(),
+        scheduler_installed: crate::scheduler::is_installed(),
+        schedule_mode: cfg.autonomous.schedule.mode.clone(),
+        schedule_day: cfg.autonomous.schedule.day.clone(),
+        schedule_hour: cfg.autonomous.schedule.hour,
+        last_run: crate::safety::read_last_run(),
+        preflight: crate::preflight::collect(),
     })
 }
 
-/// Runs the Tier 1 safety cleaner. A real (non-dry) run is only honoured
-/// once the 3-run dry-run phase is complete; before that the request is
-/// downgraded to a dry run, and each completed dry run is counted.
+/// Runs the Tier 1 safety cleaner through the shared policy path.
+/// `apply = true` asks for a real run; it is honoured only once the 3-run
+/// dry-run phase is complete. Returns a completed report or a skip reason
+/// (battery / fullscreen pre-flight gate). Long-running: callers should
+/// treat this as a background operation.
 #[tauri::command]
-pub async fn safety_clean_now(dry_run: Option<bool>) -> TidyResult<crate::cleaner::RunReport> {
+pub async fn safety_clean_now(
+    state: tauri::State<'_, crate::safety::SafetyRuntime>,
+    apply: Option<bool>,
+) -> TidyResult<crate::safety::RunOutcome> {
+    let runtime = crate::safety::SafetyRuntime {
+        cancel: state.cancel.clone(),
+        running: state.running.clone(),
+    };
+    let apply = apply.unwrap_or(false);
     tauri::async_runtime::spawn_blocking(move || {
-        let manifest = crate::manifest::Manifest::embedded().map_err(|e| TidyError::Other(e.to_string()))?;
-        let cfg_path = crate::appconfig::config_path();
-        let mut cfg = crate::appconfig::AppConfig::load_from(&cfg_path);
-        let want_dry = dry_run.unwrap_or(true);
-        let mode = if want_dry || !cfg.dry_run_phase_complete() {
-            crate::cleaner::RunMode::DryRun
-        } else {
-            crate::cleaner::RunMode::Apply
-        };
-        let report = crate::cleaner::run(&manifest, &cfg, &safety_ctx(), mode);
-        if report.dry_run && !report.cancelled {
-            cfg.autonomous.dry_runs_completed = cfg.autonomous.dry_runs_completed.saturating_add(1);
-            let _ = cfg.save_to(&cfg_path);
-        }
-        Ok(report)
+        crate::safety::run_safety_once(&runtime, apply, "ui")
     })
     .await
     .map_err(|e| TidyError::Other(e.to_string()))?
+    .map_err(TidyError::Other)
+}
+
+/// Kill switch: ask the currently running safety cleanup to stop.
+#[tauri::command]
+pub fn safety_cancel(state: tauri::State<'_, crate::safety::SafetyRuntime>) -> bool {
+    state.request_cancel()
+}
+
+/// Enables or disables autonomous cleanup. Enabling requires the dry-run
+/// phase to be complete and installs the Task Scheduler entry; disabling
+/// removes it.
+#[tauri::command]
+pub fn safety_set_autonomous(enabled: bool) -> TidyResult<bool> {
+    let cfg_path = crate::appconfig::config_path();
+    let mut cfg = crate::appconfig::AppConfig::load_from(&cfg_path);
+    if enabled && !cfg.dry_run_phase_complete() {
+        return Err(TidyError::Other(
+            "autonomous cleanup unlocks after 3 completed dry runs".to_string(),
+        ));
+    }
+    cfg.autonomous.enabled = enabled;
+    cfg.save_to(&cfg_path).map_err(|e| TidyError::Other(e.to_string()))?;
+    if enabled {
+        crate::scheduler::install(&cfg.autonomous.schedule).map_err(TidyError::Other)?;
+    } else {
+        crate::scheduler::remove().map_err(TidyError::Other)?;
+    }
+    Ok(enabled)
+}
+
+/// Updates the autonomous schedule; reinstalls the task when enabled.
+#[tauri::command]
+pub fn safety_set_schedule(mode: String, day: String, hour: u32) -> TidyResult<()> {
+    if mode != "weekly" && mode != "daily" {
+        return Err(TidyError::Other(format!("unknown schedule mode: {mode}")));
+    }
+    let cfg_path = crate::appconfig::config_path();
+    let mut cfg = crate::appconfig::AppConfig::load_from(&cfg_path);
+    cfg.autonomous.schedule.mode = mode;
+    cfg.autonomous.schedule.day = day;
+    cfg.autonomous.schedule.hour = hour.min(23);
+    cfg.save_to(&cfg_path).map_err(|e| TidyError::Other(e.to_string()))?;
+    if cfg.autonomous.enabled {
+        crate::scheduler::install(&cfg.autonomous.schedule).map_err(TidyError::Other)?;
+    }
+    Ok(())
+}
+
+/// Sets which Tier 1 categories are enabled. Unknown ids are rejected.
+#[tauri::command]
+pub fn safety_set_categories(enabled_ids: Vec<String>) -> TidyResult<Vec<String>> {
+    let manifest = crate::manifest::Manifest::embedded().map_err(|e| TidyError::Other(e.to_string()))?;
+    for id in &enabled_ids {
+        if !manifest.categories.iter().any(|c| &c.id == id) {
+            return Err(TidyError::Other(format!("unknown category id: {id}")));
+        }
+    }
+    let cfg_path = crate::appconfig::config_path();
+    let mut cfg = crate::appconfig::AppConfig::load_from(&cfg_path);
+    cfg.autonomous.categories_enabled = enabled_ids;
+    cfg.save_to(&cfg_path).map_err(|e| TidyError::Other(e.to_string()))?;
+    Ok(cfg.autonomous.categories_enabled.clone())
 }
 
 /// Restores one quarantined file to its original location.
