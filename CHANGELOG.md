@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fixed: the sidebar Safety badge could show a stale dry-run count on other screens; the safety status now loads when the app starts, so the badge is correct everywhere.
+
 ## 1.0.0 — 2026-11-11
 
 First TidyTray release. TidyTray is a safety-first fork of Tidy: the original cleaner, health monitor and startup manager, plus a reversible-by-design safety layer.
