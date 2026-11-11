@@ -1,12 +1,28 @@
 :root {
+  --t: "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --d: "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display", "Segoe UI", sans-serif;
+  --m: "SF Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+/* Default theme: GitHub-style dark. The light palette below is the original. */
+:root, [data-theme="dark"] {
+  --bg: #0D1117; --side: #010409; --card: #161B22; --line: #30363D; --line2: #21262D;
+  --ink: #E6EDF3; --ink2: #7D8590; --ink3: #484F58; --fill: rgba(177,186,196,.08); --track: #21262D;
+  --green: #3FB950; --green2: #2EA043; --green-ink: #3FB950; --green-soft: rgba(63,185,80,.15);
+  --amber: #D29922; --amber-soft: rgba(210,153,34,.15); --red: #F85149; --red-soft: rgba(248,81,73,.12);
+  --hover: rgba(177,186,196,.08); --active: rgba(177,186,196,.13); --seg-bg: rgba(177,186,196,.09);
+  --thumb: rgba(177,186,196,.22); --check-line: rgba(230,237,243,.35);
+  --c-system: #8B949E; --c-apps: #58A6FF; --c-games: #BC8CFF; --c-docs: #D29922; --c-media: #FFA198; --c-other: #6E7681; --c-junk: #3FB950;
+  color-scheme: dark;
+}
+[data-theme="light"] {
   --bg: #F5F5F7; --side: #ECECEF; --card: #FFFFFF; --line: rgba(0,0,0,.085); --line2: rgba(0,0,0,.05);
   --ink: #1D1D1F; --ink2: #6E6E73; --ink3: #A1A1A6; --fill: rgba(0,0,0,.045); --track: #E9E9EE;
   --green: #34C759; --green2: #2DB24F; --green-ink: #248A3D; --green-soft: rgba(52,199,89,.12);
   --amber: #B97A0B; --amber-soft: rgba(255,159,10,.14); --red: #D93A30; --red-soft: rgba(255,59,48,.1);
+  --hover: rgba(0,0,0,.04); --active: rgba(0,0,0,.07); --seg-bg: rgba(0,0,0,.06);
+  --thumb: rgba(0,0,0,.14); --check-line: rgba(0,0,0,.22);
   --c-system: #8E8E93; --c-apps: #6A8FD8; --c-games: #9C86D4; --c-docs: #E3AC4A; --c-media: #E4836F; --c-other: #C9C9CE; --c-junk: #34C759;
-  --t: "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
-  --d: "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display", "Segoe UI", sans-serif;
-  --m: "SF Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  color-scheme: light;
 }
 * { box-sizing: border-box; margin: 0; }
 html, body { height: 100%; }
@@ -24,8 +40,8 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .nav { padding: 6px 10px; display: flex; flex-direction: column; gap: 2px; }
 .nav a { display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: 7px; color: var(--ink); text-decoration: none; font-weight: 500; }
 .nav a svg { color: var(--ink2); }
-.nav a:hover { background: rgba(0,0,0,.04); }
-.nav a.on { background: rgba(0,0,0,.07); }
+.nav a:hover { background: var(--hover); }
+.nav a.on { background: var(--active); }
 .nav a.on svg { color: var(--green-ink); }
 .nav a .badge { margin-left: auto; font-size: 11.5px; font-weight: 600; color: var(--green-ink); }
 .nav .sep { height: 1px; background: var(--line2); margin: 8px 10px; }
@@ -43,10 +59,10 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .caps { display: flex; }
 .cap { width: 46px; height: 38px; display: grid; place-items: center; color: var(--ink); }
 .cap svg { width: 10px; height: 10px; stroke-width: 1; }
-.cap:hover { background: rgba(0,0,0,.06); }
+.cap:hover { background: var(--hover); }
 .cap.close:hover { background: #C42B1C; color: #fff; }
 .view { flex: 1; overflow: auto; padding: 0 32px 28px; }
-.view::-webkit-scrollbar { width: 10px; } .view::-webkit-scrollbar-thumb { background: rgba(0,0,0,.14); border-radius: 8px; border: 3px solid var(--bg); }
+.view::-webkit-scrollbar { width: 10px; } .view::-webkit-scrollbar-thumb { background: var(--thumb); border-radius: 8px; border: 3px solid var(--bg); }
 
 .head { display: flex; align-items: flex-end; gap: 16px; margin: 0 0 16px; }
 .head h1 { font: 600 26px/1.15 var(--d); letter-spacing: -.025em; }
@@ -120,7 +136,7 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .search { display: flex; align-items: center; gap: 7px; height: 30px; width: 240px; padding: 0 10px; border-radius: 7px; background: var(--card); border: 1px solid var(--line); color: var(--ink3); }
 .search svg { width: 15px; height: 15px; }
 .search input { border: 0; outline: 0; font: inherit; color: var(--ink); flex: 1; background: none; }
-.seg { display: inline-flex; padding: 2px; border-radius: 8px; background: rgba(0,0,0,.06); }
+.seg { display: inline-flex; padding: 2px; border-radius: 8px; background: var(--seg-bg); }
 .seg button { height: 26px; padding: 0 14px; border-radius: 6px; font-weight: 500; color: var(--ink2); }
 .seg button.on { background: var(--card); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.12), 0 0 0 .5px rgba(0,0,0,.05); }
 
@@ -148,7 +164,7 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .kv { display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; font-size: 12.5px; padding: 14px 0; border-top: 1px solid var(--line2); }
 .kv dt { color: var(--ink2); } .kv dd { text-align: right; font-weight: 500; font-variant-numeric: tabular-nums; }
 
-.check { width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid rgba(0,0,0,.22); display: grid; place-items: center; flex: none; background: #fff; }
+.check { width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid var(--check-line); display: grid; place-items: center; flex: none; background: var(--card); }
 .check svg { width: 13px; height: 13px; stroke-width: 2.4; color: #fff; opacity: 0; }
 .on > .check, .check.on { background: var(--green); border-color: var(--green); }
 .on > .check svg, .check.on svg { opacity: 1; }
@@ -167,7 +183,7 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .foot .note { display: flex; gap: 7px; align-items: center; color: var(--ink2); font-size: 12px; }
 .foot .note svg { width: 16px; height: 16px; color: var(--green-ink); }
 .foot .btn.go { margin-left: auto; }
-.toggle { width: 32px; height: 19px; border-radius: 10px; background: rgba(0,0,0,.14); position: relative; flex: none; transition: background .2s; }
+.toggle { width: 32px; height: 19px; border-radius: 10px; background: var(--track); border: 1px solid var(--line); position: relative; flex: none; transition: background .2s; }
 .toggle::after { content: ""; position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: transform .2s; }
 .toggle.on { background: var(--green); } .toggle.on::after { transform: translateX(13px); }
 .done { display: flex; align-items: center; gap: 16px; }
@@ -190,7 +206,7 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .chart { width: 100%; height: auto; stroke-width: 1; }
 .chart text { fill: var(--ink3); stroke: none; font-size: 10.5px; font-family: var(--t); }
 .cursor { position: absolute; z-index: 50; width: 22px; height: 22px; pointer-events: none; filter: drop-shadow(0 1px 2px rgba(0,0,0,.3)); }
-.cursor svg { width: 22px; height: 22px; fill: #1D1D1F; stroke: #fff; stroke-width: 1.4; }
+.cursor svg { width: 22px; height: 22px; fill: var(--ink); stroke: var(--card); stroke-width: 1.4; }
 
 /* Safety screen (blueprint M2 UI) */
 .statusrow { display: flex; align-items: center; gap: 12px; }
@@ -211,3 +227,7 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .logrow .what { flex: 1; min-width: 0; }
 .logrow .amt { font-weight: 600; font-variant-numeric: tabular-nums; }
 .logrow .ok { color: var(--green-ink); } .logrow .skip { color: var(--amber); }
+
+.themebtn { margin-left: auto; width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; color: var(--ink2); }
+.themebtn:hover { background: var(--hover); color: var(--ink); }
+.themebtn svg { width: 15px; height: 15px; }
