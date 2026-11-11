@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Added — Tier 2 catalog (M5)
+- New **Apps** section with Remove and Install tabs.
+- Remove: a 26-app bundled-app catalog with risk badges and per-app
+  reinstall sources, matched against what's actually installed.
+  Staged selection, preview, restore point, one elevated removal run,
+  and Undo (automatic for winget-backed apps; Store apps are listed
+  for manual reinstall).
+- Install: a 21-app winget catalog with installed detection, the
+  built-in Essentials and Dev workstation profiles, and user-saved
+  profiles. Available from the command line too (`--apps`,
+  `--apps-remove`, `--apps-undo`, `--install-list`, `--install`,
+  `--profiles`).
+
 - M4: Tier 2 foundation — a new Tweaks screen with the first 10 manual
   tweaks (privacy, debloat, Explorer & taskbar). Changes are staged,
   previewed with their exact before/after values, then applied with a

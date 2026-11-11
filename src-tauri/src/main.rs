@@ -2,6 +2,7 @@
 //! Tidy - PC cleanup & health for Windows.
 
 mod appconfig;
+mod apps;
 mod audit;
 mod cleaner;
 mod commands;
@@ -150,6 +151,49 @@ fn main() {
     if args.iter().any(|a| a == "--autonomous-run") {
         std::process::exit(safety::headless_autonomous_run());
     }
+    if let Some(pos) = args.iter().position(|a| a == "--apps-elevated") {
+        // Elevated helper for app removal (restore point + Remove-AppxPackage).
+        let code = args
+            .get(pos + 1)
+            .map(|p| apps::run_removal_helper(std::path::Path::new(p)))
+            .unwrap_or(3);
+        std::process::exit(code);
+    }
+    if args.iter().any(|a| a == "--apps") {
+        let states = apps::removal_states(&apps::installed_packages());
+        println!("{}", serde_json::to_string_pretty(&states).unwrap_or_default());
+        return;
+    }
+    if let Some(pos) = args.iter().position(|a| a == "--apps-remove") {
+        let packages: Vec<String> = args.get(pos + 1).cloned().unwrap_or_default().split(',').map(|p| p.to_string()).collect();
+        let outcome = apps::remove_apps(&appconfig::data_dir(), &appconfig::logs_dir(), &packages);
+        println!("{}", serde_json::to_string_pretty(&outcome).unwrap_or_default());
+        std::process::exit(if outcome.failed.is_empty() { 0 } else { 2 });
+    }
+    if args.iter().any(|a| a == "--apps-undo") {
+        let outcome = apps::undo_last_removal(&appconfig::data_dir(), &appconfig::logs_dir());
+        println!("{}", serde_json::to_string_pretty(&outcome).unwrap_or_default());
+        std::process::exit(if outcome.failed.is_empty() { 0 } else { 2 });
+    }
+    if args.iter().any(|a| a == "--install-list") {
+        let installed = apps::winget_installed().unwrap_or_default();
+        let states = apps::install_states(&installed);
+        println!("{}", serde_json::to_string_pretty(&states).unwrap_or_default());
+        return;
+    }
+    if let Some(pos) = args.iter().position(|a| a == "--install") {
+        let ids: Vec<String> = args.get(pos + 1).cloned().unwrap_or_default().split(',').map(|p| p.to_string()).collect();
+        let results = apps::winget_install(&ids);
+        for (id, ok, msg) in &results {
+            println!("{id}: {}", if *ok { "installed" } else { msg });
+        }
+        std::process::exit(if results.iter().all(|(_, ok, _)| *ok) { 0 } else { 2 });
+    }
+    if args.iter().any(|a| a == "--profiles") {
+        let profiles = apps::load_profiles(&appconfig::data_dir());
+        println!("{}", serde_json::to_string_pretty(&profiles).unwrap_or_default());
+        return;
+    }
     if let Some(pos) = args.iter().position(|a| a == "--tier2-elevated") {
         // Elevated helper for Tier 2 machine-level writes + restore point.
         // Runs the batch, writes its result file, exits before any UI starts.
@@ -247,6 +291,15 @@ fn main() {
             commands::tier2_apply,
             commands::tier2_undo_last,
             commands::tier2_undo_available,
+            commands::apps_removal_list,
+            commands::apps_remove,
+            commands::apps_undo_last,
+            commands::apps_undo_available,
+            commands::apps_install_list,
+            commands::apps_install,
+            commands::apps_profiles,
+            commands::apps_save_profile,
+            commands::apps_delete_profile,
             commands::check_path,
         ])
         .run(tauri::generate_context!())

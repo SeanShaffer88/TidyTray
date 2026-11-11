@@ -141,6 +141,28 @@ function fmtRunAt(iso) {
 
 
 
+// --- Apps (Tier 2, M5) mock data for browser previews ----------------------
+const APPS_REMOVE_MOCK = [
+  { display: 'Microsoft Copilot', package: 'Microsoft.Copilot', risk: 'safe', reinstallLabel: 'winget · Microsoft.Copilot', installed: true },
+  { display: 'Microsoft Clipchamp', package: 'Clipchamp.Clipchamp', risk: 'safe', reinstallLabel: 'winget · Clipchamp.Clipchamp', installed: true },
+  { display: 'Candy Crush Saga', package: 'king.com.CandyCrushSaga', risk: 'safe', reinstallLabel: 'Microsoft Store', installed: true },
+  { display: 'Microsoft Solitaire Collection', package: 'Microsoft.MicrosoftSolitaireCollection', risk: 'safe', reinstallLabel: 'Microsoft Store', installed: true },
+  { display: 'Spotify (preinstalled)', package: 'SpotifyAB.SpotifyMusic', risk: 'safe', reinstallLabel: 'Microsoft Store', installed: false },
+  { display: 'Xbox Game Bar', package: 'Microsoft.XboxGamingOverlay', risk: 'caution', reinstallLabel: 'Microsoft Store', installed: true },
+  { display: 'Microsoft Store', package: 'Microsoft.WindowsStore', risk: 'advanced', reinstallLabel: 'Manual reinstall', installed: true },
+];
+const APPS_INSTALL_MOCK = { wingetAvailable: true, apps: [
+  { id: 'Mozilla.Firefox', name: 'Firefox', category: 'Browsers', desc: 'Web browser by Mozilla.', installed: true },
+  { id: 'Google.Chrome', name: 'Google Chrome', category: 'Browsers', desc: 'Web browser by Google.', installed: false },
+  { id: 'VideoLAN.VLC', name: 'VLC media player', category: 'Media', desc: 'Plays nearly every audio and video format.', installed: false },
+  { id: '7zip.7zip', name: '7-Zip', category: 'Utilities', desc: 'File archiver for zip, 7z, rar and more.', installed: true },
+  { id: 'Microsoft.VisualStudioCode', name: 'Visual Studio Code', category: 'Development', desc: 'Code editor by Microsoft.', installed: false },
+  { id: 'Git.Git', name: 'Git', category: 'Development', desc: 'Version control.', installed: false },
+]};
+const PROFILES_MOCK = [
+  { name: 'Essentials', ids: ['Mozilla.Firefox', 'VideoLAN.VLC', '7zip.7zip', 'Notepad++.Notepad++'], builtin: true },
+  { name: 'Dev workstation', ids: ['Microsoft.VisualStudioCode', 'Git.Git'], builtin: true },
+];
 const TWEAKS_MOCK = [
   { id: 'telemetry_basic', title: 'Diagnostic data', desc: 'Limits Windows diagnostic data to the basic level.', group: 'Privacy', needsAdmin: true, recommended: true, applied: true, onLabel: 'Basic (minimum)', offLabel: 'Default' },
   { id: 'advertising_id_off', title: 'Advertising ID', desc: 'Stops apps using your advertising ID for personalized ads.', group: 'Privacy', needsAdmin: false, recommended: true, applied: false, onLabel: 'Off for all apps', offLabel: 'Default' },
@@ -749,7 +771,7 @@ V.safety = () => {
 
 // ---------- shell ----------
 
-const NAV = [['overview', 'Overview'], ['memory', 'Memory'], ['storage', 'Storage'], ['processes', 'Processes'], ['startup', 'Startup'], ['cleanup', 'Cleanup'], ['safety', 'Safety'], ['tweaks', 'Tweaks']];
+const NAV = [['overview', 'Overview'], ['memory', 'Memory'], ['storage', 'Storage'], ['processes', 'Processes'], ['startup', 'Startup'], ['cleanup', 'Cleanup'], ['safety', 'Safety'], ['tweaks', 'Tweaks'], ['apps', 'Apps']];
 
 function render() {
 
@@ -766,6 +788,7 @@ function render() {
   if (r === 'safety') loadSafety();
 
   if (r === 'tweaks') loadTweaks();
+  if (r === 'apps') loadApps();
 
   $('#pc-cpu').textContent = S.cpu + '%';
 
@@ -851,6 +874,72 @@ document.addEventListener('click', e => {
 
   if (a === 'sf-restore') invoke('safety_restore', { path: t.dataset.path }).then(() => loadSafety()).catch(err => alert(String(err)));
 
+
+  if (a === 'apps-tab') { S.appsTab = t.dataset.tab; S.appsPreview = false; S.appsMsg = ''; render(); }
+  if (a === 'rm-check') { const pk = t.dataset.pkg; S.rmSel = S.rmSel || {}; S.rmSel[pk] = !S.rmSel[pk]; render(); }
+  if (a === 'rm-safe') { S.rmSel = S.rmSel || {}; (S.appsRemove || APPS_REMOVE_MOCK).forEach(x => { if (x.installed && x.risk === 'safe') S.rmSel[x.package] = true; }); render(); }
+  if (a === 'rm-clear') { S.rmSel = {}; S.appsPreview = false; render(); }
+  if (a === 'rm-preview') { S.appsPreview = true; render(); }
+  if (a === 'rm-cancel') { S.appsPreview = false; render(); }
+  if (a === 'rm-apply') {
+    const packages = Object.keys(S.rmSel || {}).filter(k => S.rmSel[k]);
+    S.appsBusy = true; render();
+    const done = out => { S.appsBusy = false; S.appsPreview = false; S.rmSel = {}; S.appsMsg = out.msg; S.appsMsgErr = out.err; loadApps().then(render); };
+    if (hasTauri) invoke('apps_remove', { packages }).then(o => {
+      const parts = [];
+      if (o.removed.length) parts.push(`Removed ${o.removed.length} app${o.removed.length === 1 ? '' : 's'}${o.restorePointCreated ? ' (restore point created first)' : ''}. Undo can bring them back.`);
+      if (o.failed.length) parts.push(`Could not remove: ${o.failed.join('; ')}`);
+      done({ msg: parts.join(' ') || 'Nothing to remove.', err: o.failed.length > 0 });
+    }).catch(e => done({ msg: 'Removal failed: ' + friendly(e), err: true }));
+    else setTimeout(() => done({ msg: 'Preview only outside the app — nothing was removed.', err: false }), 400);
+  }
+  if (a === 'rm-undo') {
+    S.appsBusy = true; render();
+    const done = out => { S.appsBusy = false; S.appsMsg = out.msg; S.appsMsgErr = out.err; loadApps().then(render); };
+    if (hasTauri) invoke('apps_undo_last').then(o => {
+      if (o.nothingToUndo) return done({ msg: 'Nothing to undo.', err: false });
+      const parts = [];
+      if (o.reinstalled.length) parts.push(`Reinstalled: ${o.reinstalled.join(', ')}.`);
+      if (o.manual.length) parts.push(`Reinstall these from the Microsoft Store: ${o.manual.join(', ')}.`);
+      if (o.failed.length) parts.push(`Failed to reinstall: ${o.failed.join(', ')} (still undoable).`);
+      done({ msg: parts.join(' '), err: o.failed.length > 0 });
+    }).catch(e => done({ msg: 'Undo failed: ' + friendly(e), err: true }));
+    else setTimeout(() => done({ msg: 'Preview only outside the app.', err: false }), 300);
+  }
+  if (a === 'inst-check') { const id = t.dataset.id; S.instSel = S.instSel || {}; S.instSel[id] = !S.instSel[id]; render(); }
+  if (a === 'inst-clear') { S.instSel = {}; render(); }
+  if (a === 'inst-run') {
+    const ids = Object.keys(S.instSel || {}).filter(k => S.instSel[k]);
+    S.appsBusy = true; render();
+    const done = out => { S.appsBusy = false; S.instSel = {}; S.appsMsg = out.msg; S.appsMsgErr = out.err; loadApps().then(render); };
+    if (hasTauri) invoke('apps_install', { ids }).then(rs => {
+      const ok = rs.filter(r => r.ok).length;
+      const bad = rs.filter(r => !r.ok);
+      done({ msg: `Installed ${ok} of ${rs.length} app${rs.length === 1 ? '' : 's'}.${bad.length ? ' Failed: ' + bad.map(r => `${r.id} (${r.message})`).join('; ') : ''}`, err: bad.length > 0 });
+    }).catch(e => done({ msg: 'Install failed: ' + friendly(e), err: true }));
+    else setTimeout(() => done({ msg: 'Preview only outside the app — nothing was installed.', err: false }), 400);
+  }
+  if (a === 'prof-use') {
+    const selEl = document.getElementById('prof-sel');
+    const profiles = S.profiles || PROFILES_MOCK;
+    const pr = profiles[selEl ? +selEl.value : 0];
+    if (pr) { S.instSel = {}; pr.ids.forEach(id => { S.instSel[id] = true; }); S.appsTab = 'install'; render(); }
+  }
+  if (a === 'prof-save') {
+    const nameEl = document.getElementById('prof-name');
+    const name = nameEl ? nameEl.value.trim() : '';
+    const ids = Object.keys(S.instSel || {}).filter(k => S.instSel[k]);
+    if (!name || !ids.length) { S.appsMsg = 'Pick some apps and give the profile a name first.'; S.appsMsgErr = true; render(); }
+    else if (hasTauri) invoke('apps_save_profile', { name, ids }).then(ps => { S.profiles = ps; S.appsMsg = `Profile "${name}" saved.`; S.appsMsgErr = false; render(); }).catch(e => { S.appsMsg = friendly(e); S.appsMsgErr = true; render(); });
+    else { S.appsMsg = 'Preview only outside the app.'; S.appsMsgErr = false; render(); }
+  }
+  if (a === 'prof-del') {
+    const selEl = document.getElementById('prof-sel');
+    const profiles = S.profiles || PROFILES_MOCK;
+    const pr = profiles[selEl ? +selEl.value : 0];
+    if (!pr || pr.builtin) { S.appsMsg = 'Built-in profiles cannot be deleted — pick one of yours.'; S.appsMsgErr = true; render(); }
+    else if (hasTauri) invoke('apps_delete_profile', { name: pr.name }).then(ps => { S.profiles = ps; S.appsMsg = `Profile "${pr.name}" deleted.`; S.appsMsgErr = false; render(); }).catch(e => { S.appsMsg = friendly(e); S.appsMsgErr = true; render(); });
+  }
   if (a === 'twk-toggle') { const tw = S.tweaks.find(x => x.id === t.dataset.twk); if (tw) { const next = !twkTarget(tw); if (next === tw.applied) delete S.twkStaged[tw.id]; else S.twkStaged[tw.id] = next; S.twkPreview = null; render(); } }
 
   if (a === 'twk-preset') { for (const tw of S.tweaks) if (tw.recommended && !tw.applied) S.twkStaged[tw.id] = true; S.twkPreview = null; render(); }
@@ -891,6 +980,7 @@ document.addEventListener('click', e => {
 
 document.addEventListener('input', e => { if (e.target.id === 'q') { S.query = e.target.value; $('#tbody').innerHTML = ''; procRows(sortedProcs()); } });
 document.addEventListener('input', e => { if (e.target.id === 'twk-q') { S.twkQuery = e.target.value; const rows = $('#twk-rows'); if (rows) rows.innerHTML = twkRows(); } });
+document.addEventListener('input', e => { if (e.target.id === 'apps-q') { S.appsQuery = e.target.value; render(); const el = document.getElementById('apps-q'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } } });
 
 document.addEventListener('change', e => {
 
@@ -922,6 +1012,66 @@ function twkRows() {
     }).join('')}</div>`;
   }).join('') || '<div class="card"><p class="muted">No tweaks match your search.</p></div>';
 }
+// --- Apps (Tier 2, M5): removal catalog + winget install catalog -----------
+function riskBadge(r) { return { safe: 'Safe', caution: 'Caution', advanced: 'Advanced' }[r] || r; }
+V.apps = () => {
+  const tab = S.appsTab || 'remove';
+  const head = `<div class="pagehead"><div><h1>Apps</h1><p>Remove bundled apps you don't want — or install the ones you do. Both directions are previewed and reversible.</p></div>
+    <span class="seg"><button data-act="apps-tab" data-tab="remove" class="${tab === 'remove' ? 'on' : ''}">Remove</button><button data-act="apps-tab" data-tab="install" class="${tab === 'install' ? 'on' : ''}">Install</button></span></div>`;
+  return head + (tab === 'remove' ? appsRemoveView() : appsInstallView());
+};
+function appsRemoveView() {
+  const list = S.appsRemove || APPS_REMOVE_MOCK;
+  const q = (S.appsQuery || '').toLowerCase();
+  const rows = list.filter(a => !q || a.display.toLowerCase().includes(q) || a.package.toLowerCase().includes(q));
+  const sel = Object.keys(S.rmSel || {}).filter(k => S.rmSel[k]);
+  const undoBtn = S.appsUndo ? `<button class="btn" data-act="rm-undo" ${S.appsBusy ? 'disabled' : ''}>Undo last removal (${S.appsUndo})</button>` : '';
+  const sheet = S.appsPreview && sel.length ? `<aside class="sheet"><h3>Preview removal</h3>
+    <p class="sheet-sub">A restore point is created first. Each app can be brought back with Undo — reinstall sources are checked before anything is removed.</p>
+    ${sel.map(pk => { const a = list.find(x => x.package === pk); return a ? `<div class="chg"><b>${a.display}</b><div class="vals">Reinstall: <strong>${esc(a.reinstallLabel)}</strong></div></div>` : ''; }).join('')}
+    <p class="sheet-sub" style="margin-top:14px">Removal runs elevated — Windows will ask once.</p>
+    <div style="display:flex;gap:8px;margin-top:6px"><button class="btn primary" style="flex:1;height:36px" data-act="rm-apply" ${S.appsBusy ? 'disabled' : ''}>${S.appsBusy ? 'Removing…' : 'Create restore point & remove'}</button><button class="btn" style="height:36px" data-act="rm-cancel" ${S.appsBusy ? 'disabled' : ''}>Cancel</button></div></aside>` : '';
+  return `${S.appsMsg ? `<div class="note ${S.appsMsgErr ? 'err' : ''}" style="margin-bottom:14px"><span>ⓘ</span><span>${esc(S.appsMsg)}</span></div>` : ''}
+  <div class="note"><span>ⓘ</span><span>Removal asks for a <b>restore point</b> first and records every package, so <b>Undo</b> can reinstall what was removed (from the Store or winget). Nothing here can remove apps Windows needs to run — those aren't listed.</span></div>
+  <div class="toolbar"><input id="apps-q" type="search" placeholder="Search bundled apps…" value="${esc(S.appsQuery || '')}"><button class="btn" data-act="rm-safe">Select all Safe</button>${undoBtn}</div>
+  <div class="grp">Bundled apps on this PC</div>
+  <div class="tlist">${rows.map(a => `<div class="trow">${a.installed ? `<span class="cbx ${S.rmSel && S.rmSel[a.package] ? 'on' : ''}" data-act="rm-check" data-pkg="${esc(a.package)}">${S.rmSel && S.rmSel[a.package] ? '✓' : ''}</span>` : '<span class="cbx dis"></span>'}<div class="tt"><b>${esc(a.display)}</b><span class="pkg">${esc(a.package)}</span></div><span class="risk ${a.risk}">${riskBadge(a.risk)}</span><span class="tag">${a.installed ? 'Installed' : 'Not installed'}</span></div>`).join('') || '<div class="trow"><div class="tt"><b>No matches</b><span>Try a different search.</span></div></div>'}</div>
+  ${sel.length && !S.appsPreview ? `<div class="stagebar"><b>${sel.length} app${sel.length === 1 ? '' : 's'} selected</b><span class="dim">Removal is staged — nothing removed yet.</span><span class="sp"></span><button data-act="rm-clear">Clear</button><button class="go" data-act="rm-preview">Preview removal…</button></div>` : ''}
+  ${sheet}`;
+}
+function appsInstallView() {
+  const data = S.appsInstall || APPS_INSTALL_MOCK;
+  if (!data.wingetAvailable) return `<div class="note err"><span>ⓘ</span><span><b>winget isn't available on this PC.</b> Installing apps needs Microsoft's App Installer (which provides winget). Once it's installed, reopen this tab.</span></div>`;
+  const list = data.apps;
+  const q = (S.appsQuery || '').toLowerCase();
+  const rows = list.filter(a => !q || a.name.toLowerCase().includes(q) || a.id.toLowerCase().includes(q));
+  const sel = Object.keys(S.instSel || {}).filter(k => S.instSel[k]);
+  const profiles = S.profiles || PROFILES_MOCK;
+  const groups = {};
+  rows.forEach(a => { (groups[a.category] = groups[a.category] || []).push(a); });
+  return `${S.appsMsg ? `<div class="note ${S.appsMsgErr ? 'err' : ''}" style="margin-bottom:14px"><span>ⓘ</span><span>${esc(S.appsMsg)}</span></div>` : ''}
+  <div class="toolbar"><input id="apps-q" type="search" placeholder="Search the catalog…" value="${esc(S.appsQuery || '')}">
+    <select id="prof-sel" class="psel">${profiles.map((pr, i) => `<option value="${i}">${esc(pr.name)}${pr.builtin ? '' : ' (yours)'}</option>`).join('')}</select>
+    <button class="btn" data-act="prof-use">Use profile</button></div>
+  <div class="toolbar"><input id="prof-name" type="text" placeholder="New profile name…" value=""><button class="btn" data-act="prof-save">Save selection as profile</button><button class="btn" data-act="prof-del">Delete selected profile</button></div>
+  ${Object.keys(groups).map(g => `<div class="grp">${esc(g)}</div><div class="tlist">${groups[g].map(a => `<div class="trow">${a.installed ? '<span class="cbx dis"></span>' : `<span class="cbx ${S.instSel && S.instSel[a.id] ? 'on' : ''}" data-act="inst-check" data-id="${esc(a.id)}">${S.instSel && S.instSel[a.id] ? '✓' : ''}</span>`}<div class="tt"><b>${esc(a.name)}</b><span>${esc(a.desc)}</span></div><span class="pkg">${esc(a.id)}</span>${a.installed ? '<span class="tag app">Installed</span>' : ''}</div>`).join('')}</div>`).join('')}
+  ${sel.length ? `<div class="stagebar"><b>${sel.length} app${sel.length === 1 ? '' : 's'} selected</b><span class="dim">Installs run one at a time with winget.</span><span class="sp"></span><button data-act="inst-clear">Clear</button><button class="go" data-act="inst-run" ${S.appsBusy ? 'disabled' : ''}>${S.appsBusy ? 'Installing…' : 'Install selected'}</button></div>` : ''}`;
+}
+async function loadApps() {
+  if (!hasTauri) {
+    if (!S.rmSel) { S.rmSel = {}; S.instSel = {}; }
+    return;
+  }
+  try {
+    const [removal, install, profiles, undo] = await Promise.all([
+      invoke('apps_removal_list'), invoke('apps_install_list'), invoke('apps_profiles'), invoke('apps_undo_available'),
+    ]);
+    S.appsRemove = removal; S.appsInstall = install; S.profiles = profiles; S.appsUndo = undo || 0;
+    if (!S.rmSel) { S.rmSel = {}; S.instSel = {}; }
+    if (S.route === 'apps') render();
+  } catch (e) { /* keep the last good state */ }
+}
+
 V.tweaks = () => {
   const applied = S.tweaks.filter(t => t.applied).length;
   const stagedCount = Object.keys(S.twkStaged).length;

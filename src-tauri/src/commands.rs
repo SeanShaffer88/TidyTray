@@ -484,6 +484,108 @@ pub fn tier2_undo_available() -> TidyResult<Option<usize>> {
     Ok(crate::tier2::undo_available(&tier2_data_dir()))
 }
 
+// ---------------------------------------------------------------------------
+// Tier 2 apps (blueprint M5): bundled-app removal + winget install catalog.
+// Removal goes through one elevated helper run with a restore point and
+// records an undo batch; installs run winget with catalog ids only.
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn apps_removal_list() -> TidyResult<Vec<crate::apps::RemovalState>> {
+    let installed = tauri::async_runtime::spawn_blocking(crate::apps::installed_packages)
+        .await
+        .map_err(|e| TidyError::Other(e.to_string()))?;
+    Ok(crate::apps::removal_states(&installed))
+}
+
+#[tauri::command]
+pub async fn apps_remove(packages: Vec<String>) -> TidyResult<crate::apps::RemovalOutcome> {
+    let outcome = tauri::async_runtime::spawn_blocking(move || {
+        crate::apps::remove_apps(&crate::appconfig::data_dir(), &crate::appconfig::logs_dir(), &packages)
+    })
+    .await
+    .map_err(|e| TidyError::Other(e.to_string()))?;
+    Ok(outcome)
+}
+
+#[tauri::command]
+pub async fn apps_undo_last() -> TidyResult<crate::apps::AppUndoOutcome> {
+    let outcome = tauri::async_runtime::spawn_blocking(move || {
+        crate::apps::undo_last_removal(&crate::appconfig::data_dir(), &crate::appconfig::logs_dir())
+    })
+    .await
+    .map_err(|e| TidyError::Other(e.to_string()))?;
+    Ok(outcome)
+}
+
+#[tauri::command]
+pub fn apps_undo_available() -> TidyResult<Option<usize>> {
+    Ok(crate::apps::removal_undo_available(&crate::appconfig::data_dir()))
+}
+
+/// Install catalog + detection. `winget_available` is false when winget
+/// is missing or errors — the tab then explains instead of failing.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstallList {
+    pub winget_available: bool,
+    pub apps: Vec<crate::apps::InstallState>,
+}
+
+#[tauri::command]
+pub async fn apps_install_list() -> TidyResult<InstallList> {
+    let detected = tauri::async_runtime::spawn_blocking(crate::apps::winget_installed)
+        .await
+        .map_err(|e| TidyError::Other(e.to_string()))?;
+    Ok(InstallList {
+        winget_available: detected.is_some(),
+        apps: crate::apps::install_states(&detected.unwrap_or_default()),
+    })
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstallItemResult {
+    pub id: String,
+    pub ok: bool,
+    pub message: String,
+}
+
+#[tauri::command]
+pub async fn apps_install(ids: Vec<String>) -> TidyResult<Vec<InstallItemResult>> {
+    let results = tauri::async_runtime::spawn_blocking(move || crate::apps::winget_install(&ids))
+        .await
+        .map_err(|e| TidyError::Other(e.to_string()))?;
+    Ok(results
+        .into_iter()
+        .map(|(id, ok, message)| InstallItemResult { id, ok, message })
+        .collect())
+}
+
+#[tauri::command]
+pub fn apps_profiles() -> TidyResult<Vec<crate::apps::Profile>> {
+    Ok(crate::apps::load_profiles(&crate::appconfig::data_dir()))
+}
+
+#[tauri::command]
+pub fn apps_save_profile(name: String, ids: Vec<String>) -> TidyResult<Vec<crate::apps::Profile>> {
+    // Profile ids are validated against the install catalog on save.
+    let valid: Vec<String> = ids
+        .into_iter()
+        .filter(|id| crate::apps::install_catalog().iter().any(|e| e.id == id))
+        .collect();
+    crate::apps::save_profile(&crate::appconfig::data_dir(), &name, &valid)
+        .map_err(|e| TidyError::Other(e.to_string()))?;
+    Ok(crate::apps::load_profiles(&crate::appconfig::data_dir()))
+}
+
+#[tauri::command]
+pub fn apps_delete_profile(name: String) -> TidyResult<Vec<crate::apps::Profile>> {
+    crate::apps::delete_profile(&crate::appconfig::data_dir(), &name)
+        .map_err(|e| TidyError::Other(e.to_string()))?;
+    Ok(crate::apps::load_profiles(&crate::appconfig::data_dir()))
+}
+
 /// Opens the audit-log folder in Explorer.
 #[tauri::command]
 pub fn safety_open_logs() -> TidyResult<()> {
