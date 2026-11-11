@@ -183,7 +183,8 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .foot .note { display: flex; gap: 7px; align-items: center; color: var(--ink2); font-size: 12px; }
 .foot .note svg { width: 16px; height: 16px; color: var(--green-ink); }
 .foot .btn.go { margin-left: auto; }
-.toggle { width: 32px; height: 19px; border-radius: 10px; background: var(--track); border: 1px solid var(--line); position: relative; flex: none; transition: background .2s; }
+.toggle { width: 32px; height: 19px; border-radius: 10px; background: var(--track); border: 1px solid var(--line); position: relative; flex: none; transition: background .2s; padding: 0; cursor: pointer; appearance: none; -webkit-appearance: none; }
+.toggle:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
 .toggle::after { content: ""; position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: transform .2s; }
 .toggle.on { background: var(--green); } .toggle.on::after { transform: translateX(13px); }
 .done { display: flex; align-items: center; gap: 16px; }
@@ -221,6 +222,7 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .btnrow { display: flex; gap: 8px; margin-top: 12px; }
 .toggle.locked { opacity: .4; }
 .sfsel { background: var(--fill); border: 1px solid var(--line); border-radius: 7px; padding: 4px 8px; font: inherit; font-size: 12.5px; color: var(--ink); }
+.numin { background: var(--fill); border: 1px solid var(--line); border-radius: 7px; padding: 4px 8px; font: inherit; font-size: 12.5px; color: var(--ink); width: 76px; }
 .logrow { display: flex; gap: 10px; padding: 6px 0; align-items: baseline; font-size: 12.5px; }
 .logrow + .logrow { border-top: 1px solid var(--line2); }
 .logrow .t { color: var(--ink3); font-family: var(--m); font-size: 11.5px; flex: none; }

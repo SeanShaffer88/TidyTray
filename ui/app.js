@@ -6,6 +6,13 @@ const tauri = window.__TAURI__;
 
 const invoke = (cmd, args) => tauri ? tauri.core.invoke(cmd, args) : Promise.reject(new Error('mock'));
 
+// Environment flags used across the views. (These were referenced by
+// the Tweaks/Apps code since M4/M5 but never defined — every use threw,
+// which silently left those screens on their preview data and made
+// their actions no-ops. Defining them here fixes all call sites.)
+const IN_TAURI = !!tauri;
+const hasTauri = IN_TAURI;
+
 const GB = 1024 ** 3, MB = 1024 ** 2;
 
 const $ = s => document.querySelector(s);
@@ -142,6 +149,11 @@ function fmtRunAt(iso) {
 
 
 // --- Apps (Tier 2, M5) mock data for browser previews ----------------------
+const SETTINGS_MOCK = { dryRun: true, minTempAgeHours: 24, safeList: ['C:\\Users\\You\\Documents\\Taxes', 'D:\\Photos'], uncheckedCategories: [], largeFileMinMb: 200, startMinimized: false, scanOnLaunch: true, theme: 'dark' };
+const REPAIRS_MOCK = [
+  { id: 'sfc', title: 'System File Checker', desc: 'Scans protected Windows system files and replaces corrupted ones from the component store.' },
+  { id: 'dism', title: 'Component store repair (DISM)', desc: 'Checks the Windows component store for corruption and repairs it, which also fixes SFC failures.' },
+];
 const APPS_REMOVE_MOCK = [
   { display: 'Microsoft Copilot', package: 'Microsoft.Copilot', risk: 'safe', reinstallLabel: 'winget · Microsoft.Copilot', installed: true },
   { display: 'Microsoft Clipchamp', package: 'Clipchamp.Clipchamp', risk: 'safe', reinstallLabel: 'winget · Clipchamp.Clipchamp', installed: true },
@@ -275,6 +287,8 @@ const S = {
 
   safety: SAFETY_MOCK,
   tweaks: TWEAKS_MOCK, twkStaged: {}, twkPreview: null, twkQuery: '', twkUndo: null, twkMsg: null, twkBusy: false,
+  sfMsg: null, sfMsgErr: false, appSettings: null, setMsg: null, setMsgErr: false,
+  repairs: null, repairBusy: null, repairMsg: null, repairMsgErr: false,
 
 };
 
@@ -545,7 +559,7 @@ V.startup = () => {
 
   <div class="card" style="margin-top:16px"><div class="st sh lbl"><span></span><span>App</span><span>Command</span><span>Source</span><span>Impact</span></div>
 
-  ${S.startup.map(s => `<div class="st ${s.enabled ? '' : 'off'}"><span class="toggle ${s.enabled ? 'on' : ''}" data-tog="${esc(s.id)}"></span>
+  ${S.startup.map(s => `<div class="st ${s.enabled ? '' : 'off'}">${tog(s.enabled, `data-tog="${esc(s.id)}"`)}
 
     <div class="app row" style="min-height:0"><span class="ico" style="--k:${s.color}">${s.name[0]}</span><div class="nm"><b>${esc(s.name)}</b><small>${s.enabled ? 'Enabled' : 'Disabled'}</small></div></div>
 
@@ -583,17 +597,67 @@ V.cleanup = () => {
 
       ${S.open[c.id] ? c.subs.map(([a, g]) => `<div class="sub"><span>${esc(a)}</span><span>${fmt(g * GB * (l / c.bytes))}</span></div>`).join('') : ''}`; }).join('')}
 
-    <div class="foot"><span class="toggle ${S.dry ? 'on' : ''}" data-act="dry"></span><span>Dry run <span class="muted">· report only, delete nothing</span></span>
+    <div class="foot">${tog(S.dry, 'data-act="dry"')}<span>Dry run <span class="muted">· report only, delete nothing</span></span>
 
       <span class="note">${ic('shield')}Documents, Desktop, Program Files and 34 more are never touched</span>
 
-      <button class="btn go big" data-act="clean" ${p != null && !done ? 'disabled' : ''}>${done ? 'Done' : p != null ? 'Cleaning…' : 'Clean ' + fmt(total)}</button></div></div>`;
+      <button class="btn go big" data-act="clean" ${p != null && !done ? 'disabled' : ''}>${done ? 'Done' : p != null ? 'Cleaning…' : 'Clean ' + fmt(total)}</button></div></div>${settingsCard()}`;
 
 };
 
 
 
 
+
+async function loadSettings() {
+  if (!hasTauri) {
+    if (!S.appSettings) S.appSettings = { ...SETTINGS_MOCK, safeList: [...SETTINGS_MOCK.safeList] };
+    return;
+  }
+  try {
+    S.appSettings = await invoke('get_settings');
+    if (S.route === 'cleanup') render();
+  } catch (e) { /* keep the last good state */ }
+}
+
+// Settings edits always round-trip the full settings object so no
+// field is ever clobbered by a stale copy.
+async function saveSettingsFlow(patch) {
+  if (!hasTauri) {
+    if (!S.appSettings) S.appSettings = { ...SETTINGS_MOCK, safeList: [...SETTINGS_MOCK.safeList] };
+    Object.assign(S.appSettings, patch);
+    S.setMsg = 'Settings saved (preview only).'; S.setMsgErr = false;
+    render();
+    return;
+  }
+  try {
+    const st = await invoke('get_settings');
+    Object.assign(st, patch);
+    await invoke('save_settings', { settings: st });
+    S.appSettings = st;
+    S.setMsg = 'Settings saved.'; S.setMsgErr = false;
+    render();
+  } catch (e) {
+    S.setMsg = 'Could not save settings: ' + friendly(e); S.setMsgErr = true;
+    render();
+  }
+}
+
+function settingsCard() {
+  const st = S.appSettings || SETTINGS_MOCK;
+  return `<div class="card pad" style="margin-top:14px"><div class="ch"><h2>Settings</h2></div>
+  ${S.setMsg ? `<div class="note ${S.setMsgErr ? 'err' : ''}" style="margin-bottom:10px"><span>ⓘ</span><span>${esc(S.setMsg)}</span></div>` : ''}
+  <div class="rows">
+    <div class="row"><div class="nm"><b>Start minimized</b><small>Open into the tray instead of showing the window</small></div>${tog(st.startMinimized, 'data-act="set-startmin"')}</div>
+    <div class="row"><div class="nm"><b>Scan on launch</b><small>Run a Smart Scan when TidyTray starts</small></div>${tog(st.scanOnLaunch, 'data-act="set-scan"')}</div>
+    <div class="row"><div class="nm"><b>Minimum temp-file age</b><small>Smart Clean leaves temp files newer than this alone</small></div><span><input class="numin" type="number" min="0" max="720" step="1" value="${st.minTempAgeHours}" data-set="minTempAgeHours"> hours</span></div>
+    <div class="row"><div class="nm"><b>Large-file threshold</b><small>Files at least this large show up under Storage</small></div><span><input class="numin" type="number" min="10" max="10000" step="10" value="${st.largeFileMinMb}" data-set="largeFileMinMb"> MB</span></div>
+  </div>
+  <div class="ch" style="margin-top:16px"><h2>Safe list</h2><span class="r">${st.safeList.length} protected</span></div>
+  <p class="muted">Files and folders on this list — and everything inside them — are never scanned or cleaned.</p>
+  ${st.safeList.length ? st.safeList.map((pp, i) => `<div class="logrow"><span class="what">${esc(pp)}</span><button class="btn" data-act="set-safe-del" data-idx="${i}">Remove</button></div>`).join('') : '<p class="muted" style="margin-top:6px">The safe list is empty.</p>'}
+  <div class="btnrow" style="margin-top:10px"><input id="set-safe-new" type="text" placeholder="Full path to protect, e.g. D:\\Photos" style="flex:1"><button class="btn" data-act="set-safe-add">Add to safe list</button></div></div>`;
+}
 
 async function loadSafety() {
 
@@ -677,7 +741,7 @@ V.safety = () => {
 
     return `<div class="row"><div class="nm"><b>${esc(c.displayName)}</b><small>${esc(CAT_BLURB[c.id] || '')}${age}</small></div>
 
-      ${c.requiresAdmin ? '<span class="pill warn">Admin</span>' : ''}<span class="toggle ${on ? 'on' : ''}" data-sf-cat="${esc(c.id)}"></span></div>`;
+      ${c.requiresAdmin ? '<span class="pill warn">Admin</span>' : ''}${tog(on, `data-sf-cat="${esc(c.id)}"`)}</div>`;
 
   };
 
@@ -694,6 +758,8 @@ V.safety = () => {
 
 
   return head('Safety cleanup', 'Automatic cleanup that only touches caches and temp files — everything is quarantined for 7 days, never deleted outright.') +
+
+  (S.sfMsg ? `<div class="note ${S.sfMsgErr ? 'err' : ''}" style="margin-bottom:14px"><span>ⓘ</span><span>${esc(S.sfMsg)}</span></div>` : '') +
 
   `<div class="grid g2">
 
@@ -717,7 +783,7 @@ V.safety = () => {
 
       <div class="row"><div class="nm"><b>Run automatically</b><small>Only the categories below, on the schedule below</small></div>
 
-        <span class="toggle ${sf.autonomousEnabled ? 'on' : ''} ${phase ? '' : 'locked'}" data-act="sf-auto"></span></div>
+        ${tog(sf.autonomousEnabled, 'data-act="sf-auto"', phase ? '' : 'locked')}</div>
 
       <div class="row"><div class="nm"><b>Schedule</b></div>
 
@@ -729,11 +795,11 @@ V.safety = () => {
 
       <div class="row"><div class="nm"><b>Pause on low battery</b><small>Below ${sf.batteryPauseBelowPct}%, while on battery power</small></div>
 
-        <span class="toggle ${sf.batteryPauseBelowPct > 0 ? 'on' : ''}" data-act="sf-battery"></span></div>
+        ${tog(sf.batteryPauseBelowPct > 0, 'data-act="sf-battery"')}</div>
 
       <div class="row"><div class="nm"><b>Pause during fullscreen apps</b><small>Games and presentations are never interrupted</small></div>
 
-        <span class="toggle ${sf.pauseOnFullscreen ? 'on' : ''}" data-act="sf-fullscreen"></span></div>
+        ${tog(sf.pauseOnFullscreen, 'data-act="sf-fullscreen"')}</div>
 
       </div></div>
 
@@ -786,6 +852,7 @@ function render() {
   if (r === 'processes') procRows(sortedProcs());
 
   if (r === 'safety') loadSafety();
+  if (r === 'cleanup') loadSettings();
 
   if (r === 'tweaks') loadTweaks();
   if (r === 'apps') loadApps();
@@ -840,6 +907,10 @@ async function runClean() {
 
 
 
+// Safety-screen failures land in the view's inline message area
+// instead of alert boxes or silence.
+function sfError(prefix) { return e => { S.sfMsg = prefix + friendly(e); S.sfMsgErr = true; render(); }; }
+
 document.addEventListener('click', e => {
 
   const t = e.target.closest('[data-act],[data-cat],[data-sort],[data-tog],[data-win],[data-sf-cat],.tr');
@@ -864,15 +935,15 @@ document.addEventListener('click', e => {
 
   if (a === 'sf-pause') invoke('safety_cancel').catch(() => null);
 
-  if (a === 'sf-auto') { const sf = S.safety; if (sf.dryRunPhaseComplete) { invoke('safety_set_autonomous', { enabled: !sf.autonomousEnabled }).then(() => loadSafety()).catch(err => alert(String(err))); } }
+  if (a === 'sf-auto') { const sf = S.safety; if (sf.dryRunPhaseComplete) { invoke('safety_set_autonomous', { enabled: !sf.autonomousEnabled }).then(() => loadSafety()).catch(sfError('Could not change automatic cleanup: ')); } }
 
-  if (a === 'sf-battery') { const sf = S.safety; invoke('safety_set_pauses', { pauseOnFullscreen: sf.pauseOnFullscreen, batteryPauseBelowPct: sf.batteryPauseBelowPct > 0 ? 0 : 30 }).then(() => loadSafety()).catch(() => null); }
+  if (a === 'sf-battery') { const sf = S.safety; invoke('safety_set_pauses', { pauseOnFullscreen: sf.pauseOnFullscreen, batteryPauseBelowPct: sf.batteryPauseBelowPct > 0 ? 0 : 30 }).then(() => loadSafety()).catch(sfError('Could not save pause settings: ')); }
 
-  if (a === 'sf-fullscreen') { const sf = S.safety; invoke('safety_set_pauses', { pauseOnFullscreen: !sf.pauseOnFullscreen, batteryPauseBelowPct: sf.batteryPauseBelowPct }).then(() => loadSafety()).catch(() => null); }
+  if (a === 'sf-fullscreen') { const sf = S.safety; invoke('safety_set_pauses', { pauseOnFullscreen: !sf.pauseOnFullscreen, batteryPauseBelowPct: sf.batteryPauseBelowPct }).then(() => loadSafety()).catch(sfError('Could not save pause settings: ')); }
 
-  if (a === 'sf-review') { S.safety.showQ = !S.safety.showQ; if (S.safety.showQ) invoke('safety_quarantine_list').then(q => { S.safety.quarantine = q; render(); }).catch(() => null); }
+  if (a === 'sf-review') { S.safety.showQ = !S.safety.showQ; if (S.safety.showQ) invoke('safety_quarantine_list').then(q => { S.safety.quarantine = q; render(); }).catch(sfError('Could not load the quarantine list: ')); }
 
-  if (a === 'sf-restore') invoke('safety_restore', { path: t.dataset.path }).then(() => loadSafety()).catch(err => alert(String(err)));
+  if (a === 'sf-restore') invoke('safety_restore', { path: t.dataset.path }).then(() => loadSafety()).catch(sfError('Restore failed: '));
 
 
   if (a === 'apps-tab') { S.appsTab = t.dataset.tab; S.appsPreview = false; S.appsMsg = ''; render(); }
@@ -940,6 +1011,17 @@ document.addEventListener('click', e => {
     if (!pr || pr.builtin) { S.appsMsg = 'Built-in profiles cannot be deleted — pick one of yours.'; S.appsMsgErr = true; render(); }
     else if (hasTauri) invoke('apps_delete_profile', { name: pr.name }).then(ps => { S.profiles = ps; S.appsMsg = `Profile "${pr.name}" deleted.`; S.appsMsgErr = false; render(); }).catch(e => { S.appsMsg = friendly(e); S.appsMsgErr = true; render(); });
   }
+  if (a === 'set-startmin') saveSettingsFlow({ startMinimized: !(S.appSettings || SETTINGS_MOCK).startMinimized });
+  if (a === 'set-scan') saveSettingsFlow({ scanOnLaunch: !(S.appSettings || SETTINGS_MOCK).scanOnLaunch });
+  if (a === 'set-safe-del') { const st = S.appSettings || SETTINGS_MOCK; saveSettingsFlow({ safeList: st.safeList.filter((_, i) => i !== Number(t.dataset.idx)) }); }
+  if (a === 'set-safe-add') { const el = document.getElementById('set-safe-new'); const v = el ? el.value.trim() : ''; if (v) { const st = S.appSettings || SETTINGS_MOCK; saveSettingsFlow({ safeList: [...st.safeList, v] }); } }
+  if (a === 'repair-run') {
+    const id = t.dataset.repair;
+    S.repairBusy = id; S.repairMsg = null; render();
+    const done = out => { S.repairBusy = null; S.repairMsg = out.msg; S.repairMsgErr = out.err; render(); };
+    if (hasTauri) invoke('repair_run', { action: id }).then(o => done({ msg: o.message, err: !o.ok })).catch(e => done({ msg: 'Repair failed: ' + friendly(e), err: true }));
+    else setTimeout(() => done({ msg: 'Preview only outside the app — nothing was run.', err: false }), 400);
+  }
   if (a === 'twk-toggle') { const tw = S.tweaks.find(x => x.id === t.dataset.twk); if (tw) { const next = !twkTarget(tw); if (next === tw.applied) delete S.twkStaged[tw.id]; else S.twkStaged[tw.id] = next; S.twkPreview = null; render(); } }
 
   if (a === 'twk-preset') { for (const tw of S.tweaks) if (tw.recommended && !tw.applied) S.twkStaged[tw.id] = true; S.twkPreview = null; render(); }
@@ -954,7 +1036,7 @@ document.addEventListener('click', e => {
 
   if (a === 'twk-undo') twkUndo();
 
-  if (a === 'sf-purge') { if (confirm('Empty the quarantine now? Files in it will be permanently deleted.')) invoke('safety_purge_quarantine').then(() => loadSafety()).catch(() => null); }
+  if (a === 'sf-purge') { if (confirm('Empty the quarantine now? Files in it will be permanently deleted.')) invoke('safety_purge_quarantine').then(() => loadSafety()).catch(sfError('Could not empty the quarantine: ')); }
 
   if (a === 'sf-log') invoke('safety_open_logs').catch(() => null);
 
@@ -968,7 +1050,7 @@ document.addEventListener('click', e => {
 
   if (t.dataset.sort) S.sort = t.dataset.sort;
 
-  if (t.dataset.sfCat) { const sf = S.safety; const id = t.dataset.sfCat; const ids = sf.enabledCategories.includes(id) ? sf.enabledCategories.filter(x => x !== id) : [...sf.enabledCategories, id]; invoke('safety_set_categories', { enabledIds: ids }).then(() => loadSafety()).catch(err => alert(String(err))); }
+  if (t.dataset.sfCat) { const sf = S.safety; const id = t.dataset.sfCat; const ids = sf.enabledCategories.includes(id) ? sf.enabledCategories.filter(x => x !== id) : [...sf.enabledCategories, id]; invoke('safety_set_categories', { enabledIds: ids }).then(() => loadSafety()).catch(sfError('Could not save categories: ')); }
 
   if (t.dataset.tog) { const s = S.startup.find(x => x.id === t.dataset.tog); invoke('set_startup_enabled', { id: s.id, enabled: !s.enabled }).catch(() => null); s.enabled = !s.enabled; }
 
@@ -983,6 +1065,11 @@ document.addEventListener('input', e => { if (e.target.id === 'twk-q') { S.twkQu
 document.addEventListener('input', e => { if (e.target.id === 'apps-q') { S.appsQuery = e.target.value; render(); const el = document.getElementById('apps-q'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } } });
 
 document.addEventListener('change', e => {
+  const setEl = e.target.closest('[data-set]');
+  if (setEl) { saveSettingsFlow({ [setEl.dataset.set]: Math.max(0, Number(setEl.value) || 0) }); return; }
+});
+
+document.addEventListener('change', e => {
 
   if (!['sf-mode', 'sf-day', 'sf-hour'].includes(e.target.id)) return;
 
@@ -990,13 +1077,16 @@ document.addEventListener('change', e => {
 
   invoke('safety_set_schedule', { mode: $('#sf-mode').value, day: $('#sf-day').value, hour: Number($('#sf-hour').value) })
 
-    .then(() => loadSafety()).catch(err => alert(String(err)));
+    .then(() => loadSafety()).catch(sfError('Could not save the schedule: '));
 
 });
 
 
 
 // ---------- Tier 2 tweaks (blueprint M4) ----------
+// Accessible switch: a real <button> with role="switch", so toggles
+// are focusable, keyboard-operable, and announced by screen readers.
+const tog = (on, attrs, extra = '') => `<button type="button" role="switch" aria-checked="${on ? 'true' : 'false'}" class="toggle ${on ? 'on' : ''} ${extra}" ${attrs}></button>`;
 const twkTarget = t => (t.id in S.twkStaged ? S.twkStaged[t.id] : t.applied);
 function twkRows() {
   const q = S.twkQuery.trim().toLowerCase();
@@ -1008,7 +1098,7 @@ function twkRows() {
       const staged = t.id in S.twkStaged;
       const target = twkTarget(t);
       const tag = staged ? '<span class="tag stg">Staged</span>' : (t.applied ? '<span class="tag app">Applied</span>' : '<span class="tag">Default</span>');
-      return `<div class="trow"><div class="tt"><b>${esc(t.title)}</b><span>${esc(t.desc)}</span></div>${t.needsAdmin ? '<span class="tag">Admin</span>' : ''}${tag}<span class="toggle ${target ? 'on' : ''}" data-act="twk-toggle" data-twk="${t.id}"></span></div>`;
+      return `<div class="trow"><div class="tt"><b>${esc(t.title)}</b><span>${esc(t.desc)}</span></div>${t.needsAdmin ? '<span class="tag">Admin</span>' : ''}${tag}${tog(target, `data-act="twk-toggle" data-twk="${t.id}"`)}</div>`;
     }).join('')}</div>`;
   }).join('') || '<div class="card"><p class="muted">No tweaks match your search.</p></div>';
 }
@@ -1094,13 +1184,21 @@ V.tweaks = () => {
     ${S.twkPreview.map(c => `<div class="chg"><b>${esc(c.title)}</b><div class="vals"><em>${esc(c.fromLabel)}</em> → <strong>${esc(c.toLabel)}</strong></div></div>`).join('')}
     ${adminCount ? `<p class="sheet-sub" style="margin-top:12px">${adminCount} of these need administrator rights — Windows will ask once when you apply.</p>` : ''}
     <div style="display:flex;gap:8px;margin-top:6px"><button class="btn go" style="flex:1" data-act="twk-apply" ${S.twkBusy ? 'disabled' : ''}>${S.twkBusy ? 'Applying…' : 'Create restore point &amp; apply'}</button><button class="btn" data-act="twk-cancel">Cancel</button></div>
-  </aside>` : ''}`;
+  </aside>` : ''}${repairCard()}`;
 };
+function repairCard() {
+  const list = S.repairs || REPAIRS_MOCK;
+  return `<div class="grp" style="margin-top:22px">System repair</div>
+  ${S.repairMsg ? `<div class="note ${S.repairMsgErr ? 'err' : ''}" style="margin-bottom:10px"><span>ⓘ</span><span>${esc(S.repairMsg)}</span></div>` : ''}
+  <div class="card tlist">${list.map(r => `<div class="trow"><div class="tt"><b>${esc(r.title)}</b><span>${esc(r.desc)}</span></div><span class="tag">Admin</span><button class="btn" data-act="repair-run" data-repair="${esc(r.id)}" ${S.repairBusy ? 'disabled' : ''}>${S.repairBusy === r.id ? 'Running…' : 'Run'}</button></div>`).join('')}</div>
+  <p class="muted" style="margin-top:8px">Repairs run Windows' own tools as administrator and can take several minutes. Their full output is saved in the log folder (Safety screen → Open full log).</p>`;
+}
 async function loadTweaks() {
   if (!IN_TAURI) return;
   try {
     S.tweaks = await invoke('tier2_list');
     S.twkUndo = await invoke('tier2_undo_available');
+    try { S.repairs = await invoke('repair_list'); } catch (e) { /* keep last list */ }
     if ((location.hash.slice(1) || 'overview') === 'tweaks') render();
   } catch (e) { console.error(e); }
 }
@@ -1189,6 +1287,8 @@ async function live() {
     if ((await invoke('get_settings')).scanOnLaunch) runScan();
 
     setInterval(async () => {
+
+      if (document.hidden) return; // window is in the tray: nothing to refresh
 
       applyProcs(await invoke('list_processes', { sort: S.sort }));
 
