@@ -48,6 +48,53 @@ const drive = (mount, label, kind, total, segs) => ({ mount, label, kind, total:
 
   get free() { return this.total - this.segments.reduce((a, s) => a + s.bytes, 0); } });
 
+// ---------- safety screen (blueprint M2 UI) ----------
+
+const SAFETY_MOCK = {
+  loaded: false, loading: false, showQ: false,
+  manifestVersion: '1',
+  categories: [
+    ['temp_user', 'Your temp files', false, true, 7], ['temp_windows', 'Windows temp', true, false, 30],
+    ['browser_cache_chromium', 'Chromium browser cache', false, true, 14], ['browser_cache_firefox', 'Firefox cache', false, true, 14],
+    ['gpu_shader_cache', 'Graphics shader cache', false, true, 7], ['thumbnail_cache', 'Thumbnail cache', false, true, 0],
+    ['crash_dumps', 'Crash reports', false, true, 30], ['delivery_optimization', 'Delivery Optimization cache', true, false, 30],
+    ['ps_history', 'PowerShell history', false, false, 0],
+  ].map(([id, displayName, requiresAdmin, enabledByDefault, minAgeDays]) => ({ id, displayName, requiresAdmin, enabledByDefault, minAgeDays })),
+  enabledCategories: ['temp_user', 'browser_cache_chromium', 'browser_cache_firefox', 'gpu_shader_cache', 'thumbnail_cache', 'crash_dumps'],
+  autonomousEnabled: false, dryRunsCompleted: 2, dryRunPhaseComplete: false,
+  quarantineFiles: 312, quarantineBytes: 486 * MB, running: false, schedulerInstalled: false,
+  scheduleMode: 'weekly', scheduleDay: 'Sunday', scheduleHour: 3,
+  pauseOnFullscreen: true, batteryPauseBelowPct: 30,
+  lastRun: { at: new Date(Date.now() - 86400000).toISOString(), source: 'ui', outcome: 'complete', detail: '', dryRun: true, files: 9214, bytes: 1.8 * GB },
+  preflight: { batteryPercent: null, onAcPower: true, fullscreenApp: false, idleSeconds: 0, freeSpaceGb: 96.4 },
+  runs: [
+    { at: new Date(Date.now() - 86400000).toISOString(), source: 'ui', outcome: 'complete', detail: '', dryRun: true, files: 9214, bytes: 1.8 * GB },
+    { at: new Date(Date.now() - 86600000).toISOString(), source: 'ui', outcome: 'complete', detail: '', dryRun: true, files: 9180, bytes: 1.8 * GB },
+    { at: new Date(Date.now() - 172800000).toISOString(), source: 'scheduled', outcome: 'skipped', detail: 'a fullscreen app is active', dryRun: false, files: 0, bytes: 0 },
+  ],
+  quarantine: [],
+};
+
+const CAT_BLURB = {
+  temp_user: 'Your %TEMP% folder', temp_windows: 'System-wide temp folder',
+  browser_cache_chromium: 'Chrome, Edge, Brave and other Chromium browsers',
+  browser_cache_firefox: 'Firefox cache storage',
+  gpu_shader_cache: 'Rebuilt automatically by your games',
+  thumbnail_cache: 'Explorer previews, rebuilt as you browse',
+  crash_dumps: 'Crash dumps and error reports',
+  delivery_optimization: 'Windows Update download cache',
+  ps_history: 'Command history file only',
+};
+
+const RUN_SOURCE = { ui: 'Manual run', tray: 'Tray run', scheduled: 'Scheduled run', cli: 'Command line' };
+
+function fmtRunAt(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' · ' +
+    d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+
+
 const S = {
 
   host: 'DESKTOP-7QK2M4R', os: 'Windows 11 Pro 24H2', cpu: 23,
@@ -145,6 +192,8 @@ const S = {
   dupes: { groups: 214, wasted: 6.3 * GB },
 
   sort: 'cpu', sel: 'chrome.exe', open: { browser: true }, scanP: 1, scanMs: 2840, cleanP: null, dry: true, query: '',
+
+  safety: SAFETY_MOCK,
 
 };
 
@@ -463,9 +512,98 @@ V.cleanup = () => {
 
 
 
+
+async function loadSafety() {
+  const sf = S.safety;
+  if (!tauri || sf.loading) return;
+  sf.loading = true;
+  try {
+    const st = await invoke('safety_status');
+    Object.assign(sf, st, { loaded: true });
+    sf.runs = await invoke('safety_recent_runs', { limit: 8 }).catch(() => sf.runs);
+    if (sf.showQ) sf.quarantine = await invoke('safety_quarantine_list').catch(() => sf.quarantine);
+  } catch (e) { /* keep last known state */ }
+  sf.loading = false;
+  if ((location.hash.slice(1) || 'overview') === 'safety') render();
+}
+
+async function runSafety(apply) {
+  const sf = S.safety;
+  sf.running = true; render();
+  try { await invoke('safety_clean_now', { apply }); } catch (e) { /* surfaced via last run */ }
+  sf.running = false;
+  await loadSafety();
+}
+
+V.safety = () => {
+  const sf = S.safety;
+  const phase = sf.dryRunPhaseComplete, left = 3 - sf.dryRunsCompleted;
+  const statusTitle = sf.running ? 'Cleanup running…'
+    : !phase ? `Dry-run phase — ${sf.dryRunsCompleted} of 3 complete`
+    : sf.autonomousEnabled ? 'Automatic cleanup is on' : 'Ready — automatic cleanup is off';
+  const statusSub = sf.running ? 'You can pause it at any time; files already moved stay in quarantine.'
+    : !phase ? `${left === 1 ? 'One more practice run unlocks' : left + ' more practice runs unlock'} automatic cleanup. Practice runs change nothing.`
+    : sf.autonomousEnabled ? `Runs ${sf.scheduleMode === 'daily' ? 'daily' : 'every ' + sf.scheduleDay} at ${sf.scheduleHour}:00 · only the categories below`
+    : 'Practice phase complete. Turn on automatic cleanup, or run a cleanup whenever you like.';
+  const lr = sf.lastRun;
+  const lastLine = !lr ? 'No runs yet'
+    : lr.outcome === 'skipped' ? `Last run ${fmtRunAt(lr.at)} · skipped — ${esc(lr.detail)}`
+    : `Last run ${fmtRunAt(lr.at)} · ${lr.dryRun ? 'would free' : 'freed'} ${fmt(lr.bytes)}${lr.dryRun ? ' · nothing was moved' : ''}`;
+  const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  const catRow = c => {
+    const on = sf.enabledCategories.includes(c.id);
+    const age = c.minAgeDays > 0 ? ` · older than ${c.minAgeDays} days` : '';
+    return `<div class="row"><div class="nm"><b>${esc(c.displayName)}</b><small>${esc(CAT_BLURB[c.id] || '')}${age}</small></div>
+      ${c.requiresAdmin ? '<span class="pill warn">Admin</span>' : ''}<span class="toggle ${on ? 'on' : ''}" data-sf-cat="${esc(c.id)}"></span></div>`;
+  };
+  const runRow = r => `<div class="logrow"><span class="t">${fmtRunAt(r.at)}</span>
+      <span class="what">${RUN_SOURCE[r.source] || 'Run'}${r.dryRun ? ' (practice)' : ''} · <span class="${r.outcome === 'complete' ? 'ok' : 'skip'}">${esc(r.outcome)}${r.detail ? ' — ' + esc(r.detail) : ''}</span></span>
+      <span class="amt">${r.bytes ? fmt(r.bytes) : '—'}</span></div>`;
+  const qRow = q => `<div class="logrow"><span class="what" title="${esc(q.originalPath)}">${esc(q.originalPath.split('\\').pop())}<small class="muted" style="display:block">${esc(q.category)} · ${fmtRunAt(q.ts)}</small></span>
+      <span class="amt">${fmt(q.size)}</span><button class="btn" data-act="sf-restore" data-path="${esc(q.quarantinePath)}">Restore</button></div>`;
+
+  return head('Safety cleanup', 'Automatic cleanup that only touches caches and temp files — everything is quarantined for 7 days, never deleted outright.') +
+  `<div class="grid g2">
+    <div class="card pad"><div class="ch"><h2>Status</h2>${sf.running ? '<span class="pill warn">Running</span>' : ''}</div>
+      <div class="statusrow"><div class="shieldic">${ic('safety')}</div><div><b>${statusTitle}</b><small>${statusSub}</small></div></div>
+      ${!phase ? `<div class="sfbar"><i style="width:${sf.dryRunsCompleted / 3 * 100}%"></i></div>` : ''}
+      <div class="barlbl">${lastLine}</div>
+      <div class="btnrow"><button class="btn go" data-act="sf-run" ${sf.running ? 'disabled' : ''}>${sf.running ? 'Running…' : phase ? 'Run cleanup now' : 'Run practice cleanup'}</button>
+      <button class="btn" data-act="sf-pause" ${sf.running ? '' : 'disabled'}>Pause</button></div></div>
+
+    <div class="card pad"><div class="ch"><h2>Automatic cleanup</h2><span class="r">${phase ? (sf.schedulerInstalled ? 'Scheduled in Windows' : 'Not scheduled') : 'Locked until dry runs finish'}</span></div>
+      <div class="rows">
+      <div class="row"><div class="nm"><b>Run automatically</b><small>Only the categories below, on the schedule below</small></div>
+        <span class="toggle ${sf.autonomousEnabled ? 'on' : ''} ${phase ? '' : 'locked'}" data-act="sf-auto"></span></div>
+      <div class="row"><div class="nm"><b>Schedule</b></div>
+        <select class="sfsel" id="sf-mode"><option value="weekly" ${sf.scheduleMode === 'weekly' ? 'selected' : ''}>Weekly</option><option value="daily" ${sf.scheduleMode === 'daily' ? 'selected' : ''}>Daily</option></select>
+        <select class="sfsel" id="sf-day" ${sf.scheduleMode === 'daily' ? 'disabled' : ''}>${days.map(d => `<option ${d === sf.scheduleDay ? 'selected' : ''}>${d}</option>`).join('')}</select>
+        <select class="sfsel" id="sf-hour">${Array.from({ length: 24 }, (_, h) => `<option value="${h}" ${h === sf.scheduleHour ? 'selected' : ''}>${h}:00</option>`).join('')}</select></div>
+      <div class="row"><div class="nm"><b>Pause on low battery</b><small>Below ${sf.batteryPauseBelowPct}%, while on battery power</small></div>
+        <span class="toggle ${sf.batteryPauseBelowPct > 0 ? 'on' : ''}" data-act="sf-battery"></span></div>
+      <div class="row"><div class="nm"><b>Pause during fullscreen apps</b><small>Games and presentations are never interrupted</small></div>
+        <span class="toggle ${sf.pauseOnFullscreen ? 'on' : ''}" data-act="sf-fullscreen"></span></div>
+      </div></div>
+
+    <div class="card pad"><div class="ch"><h2>Categories</h2><span class="r">${sf.enabledCategories.length} of ${sf.categories.length} on</span></div>
+      <div class="rows">${sf.categories.map(catRow).join('')}</div></div>
+
+    <div class="card pad"><div class="ch"><h2>Quarantine</h2><span class="r">${n(sf.quarantineFiles)} files · ${fmt(sf.quarantineBytes)}</span></div>
+      <p><b>Nothing is deleted for 7 days</b></p>
+      <p class="muted" style="margin-top:4px">Anything a cleanup moved can be put back with one click until it expires.</p>
+      <div class="btnrow"><button class="btn" data-act="sf-review">${sf.showQ ? 'Hide list' : 'Review & restore…'}</button>
+      <button class="btn" data-act="sf-purge">Empty now</button></div>
+      ${sf.showQ ? `<div style="margin-top:10px">${sf.quarantine.length ? sf.quarantine.map(qRow).join('') : '<p class="muted">Quarantine is empty.</p>'}</div>` : ''}
+      <div class="ch" style="margin-top:18px"><h2>Recent runs</h2></div>
+      ${sf.runs.length ? sf.runs.map(runRow).join('') : '<p class="muted">No runs yet.</p>'}
+      <div class="btnrow"><button class="btn" data-act="sf-log">Open full log</button></div></div>
+  </div>`;
+};
+
+
 // ---------- shell ----------
 
-const NAV = [['overview', 'Overview'], ['memory', 'Memory'], ['storage', 'Storage'], ['processes', 'Processes'], ['startup', 'Startup'], ['cleanup', 'Cleanup']];
+const NAV = [['overview', 'Overview'], ['memory', 'Memory'], ['storage', 'Storage'], ['processes', 'Processes'], ['startup', 'Startup'], ['cleanup', 'Cleanup'], ['safety', 'Safety']];
 
 function render() {
 
@@ -473,11 +611,13 @@ function render() {
 
   const r = V[route] ? route : 'overview';
 
-  $('#nav').innerHTML = NAV.map(([id, l], i) => `${i === 4 ? '<div class="sep"></div>' : ''}<a href="#${id}" class="${id === r ? 'on' : ''}">${ic(id)}${l}${id === 'cleanup' && S.cleanP == null ? `<span class="badge">${fmt(reclaim())}</span>` : ''}${id === 'startup' ? `<span class="badge" style="color:var(--ink2)">${S.startup.filter(s => s.enabled).length}</span>` : ''}</a>`).join('');
+  $('#nav').innerHTML = NAV.map(([id, l], i) => `${i === 4 ? '<div class="sep"></div>' : ''}<a href="#${id}" class="${id === r ? 'on' : ''}">${ic(id)}${l}${id === 'cleanup' && S.cleanP == null ? `<span class="badge">${fmt(reclaim())}</span>` : ''}${id === 'startup' ? `<span class="badge" style="color:var(--ink2)">${S.startup.filter(s => s.enabled).length}</span>` : ''}${id === 'safety' ? (S.safety.dryRunPhaseComplete ? (S.safety.autonomousEnabled ? '<span class="badge">On</span>' : '') : `<span class="badge">${S.safety.dryRunsCompleted} of 3</span>`) : ''}</a>`).join('');
 
   $('#view').innerHTML = V[r]();
 
   if (r === 'processes') procRows(sortedProcs());
+
+  if (r === 'safety') loadSafety();
 
   $('#pc-cpu').textContent = S.cpu + '%';
 
@@ -521,7 +661,7 @@ async function runClean() {
 
 document.addEventListener('click', e => {
 
-  const t = e.target.closest('[data-act],[data-cat],[data-sort],[data-tog],[data-win],.tr');
+  const t = e.target.closest('[data-act],[data-cat],[data-sort],[data-tog],[data-win],[data-sf-cat],.tr');
 
   if (!t) return;
 
@@ -539,6 +679,24 @@ document.addEventListener('click', e => {
 
   if (a === 'end') invoke('end_process', { name: S.sel }).catch(() => null);
 
+  if (a === 'sf-run') return runSafety(S.safety.dryRunPhaseComplete);
+
+  if (a === 'sf-pause') invoke('safety_cancel').catch(() => null);
+
+  if (a === 'sf-auto') { const sf = S.safety; if (sf.dryRunPhaseComplete) { invoke('safety_set_autonomous', { enabled: !sf.autonomousEnabled }).then(() => loadSafety()).catch(err => alert(String(err))); } }
+
+  if (a === 'sf-battery') { const sf = S.safety; invoke('safety_set_pauses', { pauseOnFullscreen: sf.pauseOnFullscreen, batteryPauseBelowPct: sf.batteryPauseBelowPct > 0 ? 0 : 30 }).then(() => loadSafety()).catch(() => null); }
+
+  if (a === 'sf-fullscreen') { const sf = S.safety; invoke('safety_set_pauses', { pauseOnFullscreen: !sf.pauseOnFullscreen, batteryPauseBelowPct: sf.batteryPauseBelowPct }).then(() => loadSafety()).catch(() => null); }
+
+  if (a === 'sf-review') { S.safety.showQ = !S.safety.showQ; if (S.safety.showQ) invoke('safety_quarantine_list').then(q => { S.safety.quarantine = q; render(); }).catch(() => null); }
+
+  if (a === 'sf-restore') invoke('safety_restore', { path: t.dataset.path }).then(() => loadSafety()).catch(err => alert(String(err)));
+
+  if (a === 'sf-purge') { if (confirm('Empty the quarantine now? Files in it will be permanently deleted.')) invoke('safety_purge_quarantine').then(() => loadSafety()).catch(() => null); }
+
+  if (a === 'sf-log') invoke('safety_open_logs').catch(() => null);
+
   if (t.dataset.cat) {
 
     const c = S.cats.find(x => x.id === t.dataset.cat);
@@ -549,6 +707,8 @@ document.addEventListener('click', e => {
 
   if (t.dataset.sort) S.sort = t.dataset.sort;
 
+  if (t.dataset.sfCat) { const sf = S.safety; const id = t.dataset.sfCat; const ids = sf.enabledCategories.includes(id) ? sf.enabledCategories.filter(x => x !== id) : [...sf.enabledCategories, id]; invoke('safety_set_categories', { enabledIds: ids }).then(() => loadSafety()).catch(err => alert(String(err))); }
+
   if (t.dataset.tog) { const s = S.startup.find(x => x.id === t.dataset.tog); invoke('set_startup_enabled', { id: s.id, enabled: !s.enabled }).catch(() => null); s.enabled = !s.enabled; }
 
   if (t.classList.contains('tr')) S.sel = t.dataset.n;
@@ -558,6 +718,18 @@ document.addEventListener('click', e => {
 });
 
 document.addEventListener('input', e => { if (e.target.id === 'q') { S.query = e.target.value; $('#tbody').innerHTML = ''; procRows(sortedProcs()); } });
+
+document.addEventListener('change', e => {
+
+  if (!['sf-mode', 'sf-day', 'sf-hour'].includes(e.target.id)) return;
+
+  const sf = S.safety;
+
+  invoke('safety_set_schedule', { mode: $('#sf-mode').value, day: $('#sf-day').value, hour: Number($('#sf-hour').value) })
+
+    .then(() => loadSafety()).catch(err => alert(String(err)));
+
+});
 
 
 
