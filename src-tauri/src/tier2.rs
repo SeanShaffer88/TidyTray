@@ -545,6 +545,14 @@ pub fn undo_ops(batch: &UndoBatch) -> Vec<PlannedOp> {
 pub struct ElevatedBatch {
     pub restore_point: bool,
     pub ops: Vec<PlannedOp>,
+    /// True when the batch reverts a previous apply: its ops write the
+    /// recorded prior values rather than catalog values.
+    #[serde(default)]
+    pub undo: bool,
+    /// Random token pairing this batch with its result file. Filled in
+    /// by the parent at launch; echoed back by the helper.
+    #[serde(default)]
+    pub nonce: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -553,6 +561,46 @@ pub struct ElevatedResult {
     pub restore_point_created: bool,
     pub done: Vec<PlannedOp>,
     pub errors: Vec<String>,
+    /// Echo of the batch nonce; the parent ignores results without it.
+    #[serde(default)]
+    pub nonce: String,
+}
+
+/// The helper's trust check, mirroring the apps helper's catalog
+/// validation: every op must name a real catalog value (same toggle,
+/// hive, key and value name). Apply batches may only write the two
+/// values the planner can produce for that op — the applied value or
+/// the default. Undo batches write recorded priors, so their values
+/// cannot be pinned the same way, but the set of registry values they
+/// may touch stays exactly the catalog's. Anything else rejects the
+/// whole batch: the helper never executes a partial, untrusted plan.
+pub fn validate_batch(batch: &ElevatedBatch) -> Result<(), String> {
+    for op in &batch.ops {
+        let def =
+            find(&op.toggle_id).ok_or_else(|| format!("unknown toggle {:?}", op.toggle_id))?;
+        let cat = def
+            .ops
+            .iter()
+            .find(|c| c.hive == op.hive && c.key == op.key && c.name == op.name)
+            .ok_or_else(|| {
+                format!(
+                    "{} {}\\{} is not a catalog value",
+                    op.hive.label(),
+                    op.key,
+                    op.name
+                )
+            })?;
+        if !batch.undo && op.value != Some(cat.applied) && op.value != cat.default {
+            return Err(format!(
+                "{} {}\\{}: value {:?} is not one this toggle can write",
+                op.hive.label(),
+                op.key,
+                op.name,
+                op.value
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn result_path(batch_path: &Path) -> PathBuf {
@@ -570,7 +618,18 @@ pub fn run_elevated_helper(batch_path: &Path) -> i32 {
     let Ok(batch) = serde_json::from_str::<ElevatedBatch>(&text) else {
         return 3;
     };
-    let mut result = ElevatedResult::default();
+    let mut result = ElevatedResult {
+        nonce: batch.nonce.clone(),
+        ..Default::default()
+    };
+    if let Err(e) = validate_batch(&batch) {
+        result.errors.push(format!("batch rejected: {e}"));
+        let _ = std::fs::write(
+            result_path(batch_path),
+            serde_json::to_vec_pretty(&result).unwrap_or_default(),
+        );
+        return 2;
+    }
     if batch.restore_point {
         result.restore_point_created = std::process::Command::new("powershell")
             .args([
@@ -607,7 +666,7 @@ pub fn run_elevated_helper(_batch_path: &Path) -> i32 {
 /// result. `Err` means the helper never ran — most commonly the user
 /// declined the elevation prompt.
 #[cfg(windows)]
-pub fn launch_elevated(batch: &ElevatedBatch, dir: &Path) -> Result<ElevatedResult, String> {
+pub fn launch_elevated(mut batch: ElevatedBatch, dir: &Path) -> Result<ElevatedResult, String> {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::System::Threading::WaitForSingleObject;
@@ -616,10 +675,11 @@ pub fn launch_elevated(batch: &ElevatedBatch, dir: &Path) -> Result<ElevatedResu
     };
 
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    let batch_path = dir.join(format!("tier2-batch-{}.json", crate::audit::new_run_id()));
+    batch.nonce = crate::audit::batch_token();
+    let batch_path = dir.join(format!("tier2-batch-{}.json", &batch.nonce[..24]));
     std::fs::write(
         &batch_path,
-        serde_json::to_vec_pretty(batch).unwrap_or_default(),
+        serde_json::to_vec_pretty(&batch).unwrap_or_default(),
     )
     .map_err(|e| e.to_string())?;
 
@@ -650,28 +710,104 @@ pub fn launch_elevated(batch: &ElevatedBatch, dir: &Path) -> Result<ElevatedResu
     let ok = unsafe { ShellExecuteExW(&mut info) };
     if ok == 0 || info.hProcess.is_null() {
         let _ = std::fs::remove_file(&batch_path);
-        return Err("elevation was declined or failed to start".to_string());
+        return Err(
+            "administrator approval: elevation was declined or failed to start".to_string(),
+        );
     }
     // Restore points can take a while; allow up to 3 minutes.
-    unsafe { WaitForSingleObject(info.hProcess, 180_000) };
+    let waited = unsafe { WaitForSingleObject(info.hProcess, 180_000) };
     unsafe { CloseHandle(info.hProcess) };
-    let result = std::fs::read_to_string(result_path(&batch_path))
+    if waited != 0 {
+        // WAIT_OBJECT_0 is 0; anything else means the helper is still
+        // running (or the wait failed). Its changes may still land, so
+        // the batch stays on disk: the next apply/undo reconciles a
+        // late result into the undo store instead of losing it.
+        return Err(
+            "the elevated helper did not finish in time; any changes it completes              will be recorded for Undo on the next apply or undo"
+                .to_string(),
+        );
+    }
+    let parsed = std::fs::read_to_string(result_path(&batch_path))
         .ok()
-        .and_then(|text| serde_json::from_str::<ElevatedResult>(&text).ok())
-        .ok_or_else(|| "the elevated helper did not report a result".to_string());
+        .and_then(|text| serde_json::from_str::<ElevatedResult>(&text).ok());
+    let result = match parsed {
+        Some(r) if r.nonce == batch.nonce => Ok(r),
+        Some(_) => Err("the elevated helper's result did not match its batch".to_string()),
+        None => Err("the elevated helper did not report a result".to_string()),
+    };
     let _ = std::fs::remove_file(&batch_path);
     let _ = std::fs::remove_file(result_path(&batch_path));
     result
 }
 
 #[cfg(not(windows))]
-pub fn launch_elevated(_batch: &ElevatedBatch, _dir: &Path) -> Result<ElevatedResult, String> {
+pub fn launch_elevated(_batch: ElevatedBatch, _dir: &Path) -> Result<ElevatedResult, String> {
     Err("elevation is only available on Windows".to_string())
 }
 
 // ---------------------------------------------------------------------------
 // Apply / undo orchestration
 // ---------------------------------------------------------------------------
+
+/// Folds results from elevated helpers that outlived their parent's
+/// wait (the launch timeout path) into the undo store, so a
+/// slow-but-successful helper never leaves changes without an undo
+/// record. Orphaned *undo* helpers are only cleaned up: their reverts
+/// already landed, and the parent kept retry entries that write the
+/// same priors again harmlessly. Batch files with no result after
+/// 15 minutes are dropped. Returns how many results were folded in.
+pub fn reconcile_orphans(data_dir: &Path, logs_dir: &Path) -> usize {
+    let Ok(rd) = std::fs::read_dir(data_dir) else {
+        return 0;
+    };
+    let log = crate::audit::AuditLog::new(logs_dir.to_path_buf());
+    let mut folded = 0;
+    for entry in rd.flatten() {
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !name.starts_with("tier2-batch-") || !name.ends_with(".json") || name.contains("result")
+        {
+            continue;
+        }
+        let rpath = result_path(&path);
+        if rpath.exists() {
+            let batch = std::fs::read_to_string(&path)
+                .ok()
+                .and_then(|t| serde_json::from_str::<ElevatedBatch>(&t).ok());
+            let result = std::fs::read_to_string(&rpath)
+                .ok()
+                .and_then(|t| serde_json::from_str::<ElevatedResult>(&t).ok());
+            if let (Some(b), Some(r)) = (batch, result) {
+                if !b.undo && r.nonce == b.nonce && !r.done.is_empty() {
+                    let undo = UndoBatch {
+                        id: crate::audit::new_run_id(),
+                        ts: crate::audit::iso_now(),
+                        entries: r.done.iter().map(UndoEntry::from).collect(),
+                    };
+                    if append_undo(&undo_path(data_dir), undo).is_ok() {
+                        let _ = log.append(
+                            &crate::audit::LogEntry::new(&crate::audit::new_run_id(), "tier2")
+                                .result("reconciled"),
+                        );
+                        folded += 1;
+                    }
+                }
+            }
+            let _ = std::fs::remove_file(&path);
+            let _ = std::fs::remove_file(&rpath);
+        } else {
+            let stale = entry
+                .metadata()
+                .and_then(|m| m.modified())
+                .map(|t| t.elapsed().map(|e| e.as_secs() > 900).unwrap_or(false))
+                .unwrap_or(false);
+            if stale {
+                let _ = std::fs::remove_file(&path);
+            }
+        }
+    }
+    folded
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -724,6 +860,7 @@ pub fn apply_changes(
     changes: &[(String, bool)],
     want_restore_point: bool,
 ) -> ApplyOutcome {
+    let _ = reconcile_orphans(data_dir, logs_dir);
     let planned = plan(changes, store);
     let log = crate::audit::AuditLog::new(logs_dir.to_path_buf());
     if planned.is_empty() {
@@ -749,14 +886,16 @@ pub fn apply_changes(
         let batch = ElevatedBatch {
             restore_point: want_restore_point,
             ops: admin_ops,
+            undo: false,
+            nonce: String::new(),
         };
-        match launch_elevated(&batch, data_dir) {
+        match launch_elevated(batch, data_dir) {
             Ok(result) => {
                 restore_point_created = result.restore_point_created;
                 done.extend(result.done);
                 failed.extend(result.errors);
             }
-            Err(e) => failed.push(format!("administrator approval: {e}")),
+            Err(e) => failed.push(e),
         }
     }
     let (user_done, user_errors) = execute(&user_ops, store);
@@ -813,6 +952,7 @@ pub struct UndoOutcome {
 /// Reverts the most recent applied batch. Entries that fail to revert
 /// are kept as a fresh batch so Undo can be retried.
 pub fn undo_last(store: &dyn RegStore, data_dir: &Path, logs_dir: &Path) -> UndoOutcome {
+    let _ = reconcile_orphans(data_dir, logs_dir);
     let path = undo_path(data_dir);
     let mut batches = load_undo(&path);
     let Some(batch) = batches.pop() else {
@@ -830,9 +970,11 @@ pub fn undo_last(store: &dyn RegStore, data_dir: &Path, logs_dir: &Path) -> Undo
     let mut failed: Vec<String> = Vec::new();
     if !admin_ops.is_empty() {
         match launch_elevated(
-            &ElevatedBatch {
+            ElevatedBatch {
                 restore_point: false,
                 ops: admin_ops,
+                undo: true,
+                nonce: String::new(),
             },
             data_dir,
         ) {
@@ -840,7 +982,7 @@ pub fn undo_last(store: &dyn RegStore, data_dir: &Path, logs_dir: &Path) -> Undo
                 done.extend(result.done);
                 failed.extend(result.errors);
             }
-            Err(e) => failed.push(format!("administrator approval: {e}")),
+            Err(e) => failed.push(e),
         }
     }
     let (user_done, user_errors) = execute(&user_ops, store);
@@ -897,6 +1039,120 @@ pub fn undo_available(data_dir: &Path) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn planned_op(id: &str, value: Option<u32>) -> PlannedOp {
+        let def = find(id).unwrap();
+        let op = def.ops[0];
+        PlannedOp {
+            toggle_id: id.to_string(),
+            hive: op.hive,
+            key: op.key.to_string(),
+            name: op.name.to_string(),
+            prior: None,
+            value,
+        }
+    }
+
+    #[test]
+    fn helper_validation_accepts_planner_shaped_batches() {
+        let def = find("telemetry_basic").unwrap();
+        let batch = ElevatedBatch {
+            restore_point: true,
+            ops: vec![planned_op("telemetry_basic", Some(def.ops[0].applied))],
+            undo: false,
+            nonce: "n".into(),
+        };
+        assert!(validate_batch(&batch).is_ok());
+        // The un-apply direction writes the catalog default.
+        let batch = ElevatedBatch {
+            ops: vec![planned_op("telemetry_basic", def.ops[0].default)],
+            ..batch
+        };
+        assert!(validate_batch(&batch).is_ok());
+    }
+
+    #[test]
+    fn helper_validation_rejects_foreign_ops_and_values() {
+        // A registry value the catalog does not own (a Run key).
+        let mut foreign = planned_op("telemetry_basic", Some(1));
+        foreign.key = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run".to_string();
+        let batch = ElevatedBatch {
+            restore_point: false,
+            ops: vec![foreign],
+            undo: false,
+            nonce: String::new(),
+        };
+        assert!(validate_batch(&batch).is_err());
+        // A catalog value with a value the toggle can never write.
+        let batch = ElevatedBatch {
+            ops: vec![planned_op("telemetry_basic", Some(7))],
+            ..batch
+        };
+        assert!(validate_batch(&batch).is_err());
+        // Unknown toggle id.
+        let mut op = planned_op("telemetry_basic", Some(1));
+        op.toggle_id = "not_a_toggle".to_string();
+        let batch = ElevatedBatch {
+            ops: vec![op],
+            ..batch
+        };
+        assert!(validate_batch(&batch).is_err());
+    }
+
+    #[test]
+    fn helper_validation_allows_undo_priors_on_catalog_values_only() {
+        // Undo writes the recorded prior, which may be any DWORD...
+        let batch = ElevatedBatch {
+            restore_point: false,
+            ops: vec![planned_op("telemetry_basic", Some(7))],
+            undo: true,
+            nonce: String::new(),
+        };
+        assert!(validate_batch(&batch).is_ok());
+        // ...but never to a value outside the catalog.
+        let mut foreign = planned_op("telemetry_basic", Some(7));
+        foreign.name = "SomethingElse".to_string();
+        let batch = ElevatedBatch {
+            ops: vec![foreign],
+            ..batch
+        };
+        assert!(validate_batch(&batch).is_err());
+    }
+
+    #[test]
+    fn orphaned_helper_result_is_reconciled_into_undo() {
+        let dir =
+            std::env::temp_dir().join(format!("tidytray-t2-reconcile-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let op = planned_op("telemetry_basic", Some(1));
+        let batch = ElevatedBatch {
+            restore_point: false,
+            ops: vec![op.clone()],
+            undo: false,
+            nonce: "tok123".to_string(),
+        };
+        let batch_path = dir.join("tier2-batch-abc.json");
+        std::fs::write(&batch_path, serde_json::to_vec(&batch).unwrap()).unwrap();
+        let result = ElevatedResult {
+            restore_point_created: false,
+            done: vec![op],
+            errors: Vec::new(),
+            nonce: "tok123".to_string(),
+        };
+        std::fs::write(
+            result_path(&batch_path),
+            serde_json::to_vec(&result).unwrap(),
+        )
+        .unwrap();
+        let logs = dir.join("logs");
+        assert_eq!(reconcile_orphans(&dir, &logs), 1);
+        let undo = load_undo(&undo_path(&dir));
+        assert_eq!(undo.len(), 1);
+        assert_eq!(undo[0].entries.len(), 1);
+        assert!(!batch_path.exists(), "orphan files are cleaned up");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     fn store_with(hive: Hive, key: &str, name: &str, value: u32) -> FakeStore {
         let store = FakeStore::default();

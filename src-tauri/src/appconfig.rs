@@ -145,6 +145,22 @@ impl AppConfig {
         match fs::read_to_string(path) {
             Ok(text) => Self::parse(&text).unwrap_or_else(|e| {
                 log::warn!("TidyTray config ignored ({e}); using defaults");
+                // Falling back to defaults is the safe direction, but
+                // it must not be silent: the damaged file is preserved
+                // next to the config and the reset is audit-logged, so
+                // lost dry-run progress and settings have an explanation.
+                let bad = path.with_extension("json.bad");
+                let _ = fs::copy(path, &bad);
+                if let Some(parent) = path.parent() {
+                    let log = crate::audit::AuditLog::new(parent.join("Logs"));
+                    let _ = log.append(
+                        &crate::audit::LogEntry::new(&crate::audit::new_run_id(), "config")
+                            .path(path)
+                            .result(
+                                "parse failed; defaults used — original saved as config.json.bad",
+                            ),
+                    );
+                }
                 Self::default()
             }),
             Err(_) => Self::default(),

@@ -158,21 +158,37 @@ fn expand_segments(segments: &[String], idx: usize, base: PathBuf) -> Vec<PathBu
 
 /// Collects candidate files under one root: regular files only, symlinks
 /// and junctions never followed, folders themselves never returned.
-fn collect_candidates(root: &Path, out: &mut Vec<(PathBuf, fs::Metadata)>) {
-    let Ok(meta) = fs::metadata(root) else { return };
+/// Returns false when the kill switch fired mid-walk: collection of a
+/// huge tree must not delay a stop request until processing starts.
+fn collect_candidates(
+    root: &Path,
+    out: &mut Vec<(PathBuf, fs::Metadata)>,
+    cancel: &AtomicBool,
+) -> bool {
+    let Ok(meta) = fs::metadata(root) else {
+        return true;
+    };
     if meta.is_file() {
         out.push((root.to_path_buf(), meta));
-        return;
+        return true;
     }
     if !meta.is_dir() {
-        return;
+        return true;
     }
     let mut stack = vec![root.to_path_buf()];
+    let mut seen = 0u32;
     while let Some(dir) = stack.pop() {
+        if cancel.load(Ordering::Relaxed) {
+            return false;
+        }
         let Ok(entries) = fs::read_dir(&dir) else {
             continue;
         };
         for e in entries.flatten() {
+            seen += 1;
+            if seen.is_multiple_of(256) && cancel.load(Ordering::Relaxed) {
+                return false;
+            }
             let Ok(m) = e.metadata() else { continue };
             let ft = m.file_type();
             if ft.is_symlink() || crate::scanner::is_reparse_point(&m) {
@@ -185,6 +201,7 @@ fn collect_candidates(root: &Path, out: &mut Vec<(PathBuf, fs::Metadata)>) {
             }
         }
     }
+    true
 }
 
 fn old_enough(meta: &fs::Metadata, category: &Category, now: SystemTime) -> bool {
@@ -243,8 +260,21 @@ pub fn run(manifest: &Manifest, config: &AppConfig, ctx: &RunContext, mode: RunM
         }
         let mut candidates = Vec::new();
         for root in &roots {
-            collect_candidates(root, &mut candidates);
+            if !collect_candidates(root, &mut candidates, &ctx.cancel) {
+                cancelled = true;
+                break;
+            }
         }
+        if cancelled {
+            reports.push(rep);
+            break;
+        }
+        // Skip events are summarized per category after the loop (two
+        // sample paths per kind are kept): one log line per skipped
+        // file made runs over huge temp trees write tens of thousands
+        // of entries saying the same thing.
+        let mut skip_bytes = [0u64; 3];
+        let mut skip_samples: Vec<(&'static str, PathBuf, u64)> = Vec::new();
         for (path, meta) in candidates {
             if ctx.cancel.load(Ordering::Relaxed) {
                 cancelled = true;
@@ -253,34 +283,43 @@ pub fn run(manifest: &Manifest, config: &AppConfig, ctx: &RunContext, mode: RunM
             let size = meta.len();
             if !old_enough(&meta, category, now) {
                 rep.skipped_age += 1;
-                let _ = log.append(
-                    &LogEntry::new(&run_id, "skip_age")
-                        .category(&category.id)
-                        .path(&path)
-                        .size(size),
-                );
+                skip_bytes[0] += size;
+                if skip_samples
+                    .iter()
+                    .filter(|(k, _, _)| *k == "skip_age")
+                    .count()
+                    < 2
+                {
+                    skip_samples.push(("skip_age", path.clone(), size));
+                }
                 continue;
             }
             if rep.bytes.saturating_add(size) > category.max_bytes()
                 || total_bytes.saturating_add(size) > total_cap
             {
                 rep.skipped_size_cap += 1;
-                let _ = log.append(
-                    &LogEntry::new(&run_id, "skip_size_cap")
-                        .category(&category.id)
-                        .path(&path)
-                        .size(size),
-                );
+                skip_bytes[1] += size;
+                if skip_samples
+                    .iter()
+                    .filter(|(k, _, _)| *k == "skip_size_cap")
+                    .count()
+                    < 2
+                {
+                    skip_samples.push(("skip_size_cap", path.clone(), size));
+                }
                 continue;
             }
             if category.skip_locked && is_locked(&path) {
                 rep.skipped_locked += 1;
-                let _ = log.append(
-                    &LogEntry::new(&run_id, "skip_locked")
-                        .category(&category.id)
-                        .path(&path)
-                        .size(size),
-                );
+                skip_bytes[2] += size;
+                if skip_samples
+                    .iter()
+                    .filter(|(k, _, _)| *k == "skip_locked")
+                    .count()
+                    < 2
+                {
+                    skip_samples.push(("skip_locked", path.clone(), size));
+                }
                 continue;
             }
             if dry {
@@ -324,6 +363,29 @@ pub fn run(manifest: &Manifest, config: &AppConfig, ctx: &RunContext, mode: RunM
                 }
             }
         }
+        for (kind, path, size) in &skip_samples {
+            let _ = log.append(
+                &LogEntry::new(&run_id, kind)
+                    .category(&category.id)
+                    .path(path)
+                    .size(*size)
+                    .result("sample"),
+            );
+        }
+        for (kind, n, bytes) in [
+            ("skip_age", rep.skipped_age, skip_bytes[0]),
+            ("skip_size_cap", rep.skipped_size_cap, skip_bytes[1]),
+            ("skip_locked", rep.skipped_locked, skip_bytes[2]),
+        ] {
+            if n > 0 {
+                let _ = log.append(
+                    &LogEntry::new(&run_id, kind)
+                        .category(&category.id)
+                        .size(bytes)
+                        .result(format!("{n} files (summarized)")),
+                );
+            }
+        }
         reports.push(rep);
     }
 
@@ -331,6 +393,15 @@ pub fn run(manifest: &Manifest, config: &AppConfig, ctx: &RunContext, mode: RunM
     // permanent deletion in the engine, and only of quarantined files).
     let retention =
         std::time::Duration::from_secs(config.quarantine.retention_days.saturating_mul(86_400));
+    let logs_pruned =
+        crate::audit::prune_old_logs(ctx.audit.dir(), crate::audit::LOG_RETENTION_DAYS);
+    if logs_pruned > 0 {
+        let _ = log.append(
+            &LogEntry::new(&run_id, "log_prune")
+                .size(logs_pruned as u64)
+                .result("retention_expired"),
+        );
+    }
     let purged = ctx.quarantine.purge_expired(retention, SystemTime::now());
     if purged > 0 {
         let _ = log.append(

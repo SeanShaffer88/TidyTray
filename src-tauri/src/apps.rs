@@ -531,6 +531,10 @@ pub fn winget_installed() -> Option<BTreeSet<String>> {
 pub struct RemovalBatch {
     pub restore_point: bool,
     pub packages: Vec<String>,
+    /// Random token pairing this batch with its result file. Filled in
+    /// by the parent at launch; echoed back by the helper.
+    #[serde(default)]
+    pub nonce: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -539,6 +543,9 @@ pub struct RemovalResult {
     pub restore_point_created: bool,
     pub removed: Vec<String>,
     pub errors: Vec<String>,
+    /// Echo of the batch nonce; the parent ignores results without it.
+    #[serde(default)]
+    pub nonce: String,
 }
 
 fn removal_result_path(batch_path: &Path) -> PathBuf {
@@ -566,7 +573,10 @@ pub fn run_removal_helper(batch_path: &Path) -> i32 {
     let Ok(batch) = serde_json::from_str::<RemovalBatch>(&text) else {
         return 3;
     };
-    let mut result = RemovalResult::default();
+    let mut result = RemovalResult {
+        nonce: batch.nonce.clone(),
+        ..Default::default()
+    };
     if batch.restore_point {
         result.restore_point_created = std::process::Command::new("powershell")
             .args(["-NoProfile", "-NonInteractive", "-Command",
@@ -617,7 +627,7 @@ pub fn run_removal_helper(_batch_path: &Path) -> i32 {
 
 /// Parent side: one elevated run covers the restore point + all removals.
 #[cfg(windows)]
-pub fn launch_removal(batch: &RemovalBatch, dir: &Path) -> Result<RemovalResult, String> {
+pub fn launch_removal(mut batch: RemovalBatch, dir: &Path) -> Result<RemovalResult, String> {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::System::Threading::WaitForSingleObject;
@@ -626,10 +636,11 @@ pub fn launch_removal(batch: &RemovalBatch, dir: &Path) -> Result<RemovalResult,
     };
 
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    let batch_path = dir.join(format!("apps-batch-{}.json", crate::audit::new_run_id()));
+    batch.nonce = crate::audit::batch_token();
+    let batch_path = dir.join(format!("apps-batch-{}.json", &batch.nonce[..24]));
     std::fs::write(
         &batch_path,
-        serde_json::to_vec_pretty(batch).unwrap_or_default(),
+        serde_json::to_vec_pretty(&batch).unwrap_or_default(),
     )
     .map_err(|e| e.to_string())?;
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
@@ -659,22 +670,37 @@ pub fn launch_removal(batch: &RemovalBatch, dir: &Path) -> Result<RemovalResult,
     let ok = unsafe { ShellExecuteExW(&mut info) };
     if ok == 0 || info.hProcess.is_null() {
         let _ = std::fs::remove_file(&batch_path);
-        return Err("elevation was declined or failed to start".to_string());
+        return Err(
+            "administrator approval: elevation was declined or failed to start".to_string(),
+        );
     }
     // Removals plus a restore point can take a while; allow 5 minutes.
-    unsafe { WaitForSingleObject(info.hProcess, 300_000) };
+    let waited = unsafe { WaitForSingleObject(info.hProcess, 300_000) };
     unsafe { CloseHandle(info.hProcess) };
-    let result = std::fs::read_to_string(removal_result_path(&batch_path))
+    if waited != 0 {
+        // Still running (or the wait failed): removals may still land,
+        // so the batch stays on disk for the next remove/undo to
+        // reconcile into the undo store.
+        return Err(
+            "the elevated helper did not finish in time; any removals it completes              will be recorded for Undo on the next remove or undo"
+                .to_string(),
+        );
+    }
+    let parsed = std::fs::read_to_string(removal_result_path(&batch_path))
         .ok()
-        .and_then(|t| serde_json::from_str::<RemovalResult>(&t).ok())
-        .ok_or_else(|| "the elevated helper did not report a result".to_string());
+        .and_then(|t| serde_json::from_str::<RemovalResult>(&t).ok());
+    let result = match parsed {
+        Some(r) if r.nonce == batch.nonce => Ok(r),
+        Some(_) => Err("the elevated helper's result did not match its batch".to_string()),
+        None => Err("the elevated helper did not report a result".to_string()),
+    };
     let _ = std::fs::remove_file(&batch_path);
     let _ = std::fs::remove_file(removal_result_path(&batch_path));
     result
 }
 
 #[cfg(not(windows))]
-pub fn launch_removal(_batch: &RemovalBatch, _dir: &Path) -> Result<RemovalResult, String> {
+pub fn launch_removal(_batch: RemovalBatch, _dir: &Path) -> Result<RemovalResult, String> {
     Err("elevation is only available on Windows".to_string())
 }
 
@@ -729,9 +755,87 @@ pub struct RemovalOutcome {
     pub restore_point_created: bool,
 }
 
+/// Folds results from removal helpers that outlived their parent's
+/// wait into the removal undo store, so a slow-but-successful removal
+/// never leaves an app with no way back. Batch files with no result
+/// after 15 minutes are dropped. Returns how many were folded in.
+pub fn reconcile_orphans(data_dir: &Path, logs_dir: &Path) -> usize {
+    let Ok(rd) = std::fs::read_dir(data_dir) else {
+        return 0;
+    };
+    let log = crate::audit::AuditLog::new(logs_dir.to_path_buf());
+    let mut folded = 0;
+    for entry in rd.flatten() {
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !name.starts_with("apps-batch-") || !name.ends_with(".json") || name.contains("result") {
+            continue;
+        }
+        let rpath = removal_result_path(&path);
+        if rpath.exists() {
+            let batch = std::fs::read_to_string(&path)
+                .ok()
+                .and_then(|t| serde_json::from_str::<RemovalBatch>(&t).ok());
+            let result = std::fs::read_to_string(&rpath)
+                .ok()
+                .and_then(|t| serde_json::from_str::<RemovalResult>(&t).ok());
+            if let (Some(b), Some(r)) = (batch, result) {
+                if r.nonce == b.nonce && !r.removed.is_empty() {
+                    let entries: Vec<RemovedRecord> = r
+                        .removed
+                        .iter()
+                        .filter_map(|p| {
+                            find_app(p).map(|a| RemovedRecord {
+                                package: p.clone(),
+                                display: a.display.to_string(),
+                                winget_id: match a.reinstall {
+                                    Reinstall::Winget(id) => Some(id.to_string()),
+                                    _ => None,
+                                },
+                                reinstall_label: a.reinstall.label(),
+                            })
+                        })
+                        .collect();
+                    if !entries.is_empty() {
+                        let mut batches = load_removal_undo(&apps_undo_path(data_dir));
+                        batches.push(RemovalUndoBatch {
+                            id: crate::audit::new_run_id(),
+                            ts: crate::audit::iso_now(),
+                            entries,
+                        });
+                        if save_removal_undo(&apps_undo_path(data_dir), &batches).is_ok() {
+                            let _ = log.append(
+                                &crate::audit::LogEntry::new(
+                                    &crate::audit::new_run_id(),
+                                    "app-remove",
+                                )
+                                .result("reconciled"),
+                            );
+                            folded += 1;
+                        }
+                    }
+                }
+            }
+            let _ = std::fs::remove_file(&path);
+            let _ = std::fs::remove_file(&rpath);
+        } else {
+            let stale = entry
+                .metadata()
+                .and_then(|m| m.modified())
+                .map(|t| t.elapsed().map(|e| e.as_secs() > 900).unwrap_or(false))
+                .unwrap_or(false);
+            if stale {
+                let _ = std::fs::remove_file(&path);
+            }
+        }
+    }
+    folded
+}
+
 /// Removes the selected catalog packages through one elevated run and
 /// records an undo batch for exactly what was removed.
 pub fn remove_apps(data_dir: &Path, logs_dir: &Path, packages: &[String]) -> RemovalOutcome {
+    let _ = reconcile_orphans(data_dir, logs_dir);
     let log = crate::audit::AuditLog::new(logs_dir.to_path_buf());
     // Intersect with the catalog — arbitrary package names never reach
     // the helper, whatever the caller passed.
@@ -755,14 +859,15 @@ pub fn remove_apps(data_dir: &Path, logs_dir: &Path, packages: &[String]) -> Rem
     let batch = RemovalBatch {
         restore_point: true,
         packages: chosen,
+        nonce: String::new(),
     };
-    let (removed, restore_point_created) = match launch_removal(&batch, data_dir) {
+    let (removed, restore_point_created) = match launch_removal(batch, data_dir) {
         Ok(result) => {
             failed.extend(result.errors);
             (result.removed, result.restore_point_created)
         }
         Err(e) => {
-            failed.push(format!("administrator approval: {e}"));
+            failed.push(e);
             (Vec::new(), false)
         }
     };
@@ -820,6 +925,7 @@ pub struct AppUndoOutcome {
 /// Reinstalls the most recent removal batch: winget where an id is
 /// known; Store/Manual entries are reported, not faked.
 pub fn undo_last_removal(data_dir: &Path, logs_dir: &Path) -> AppUndoOutcome {
+    let _ = reconcile_orphans(data_dir, logs_dir);
     let path = apps_undo_path(data_dir);
     let mut batches = load_removal_undo(&path);
     let Some(batch) = batches.pop() else {
@@ -986,6 +1092,40 @@ pub fn install_states(installed: &BTreeSet<String>) -> Vec<InstallState> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn orphaned_removal_result_is_reconciled_into_undo() {
+        let dir =
+            std::env::temp_dir().join(format!("tidytray-apps-reconcile-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let package = removal_catalog()[0].package.to_string();
+        let batch = RemovalBatch {
+            restore_point: false,
+            packages: vec![package.clone()],
+            nonce: "tok456".to_string(),
+        };
+        let batch_path = dir.join("apps-batch-abc.json");
+        std::fs::write(&batch_path, serde_json::to_vec(&batch).unwrap()).unwrap();
+        let result = RemovalResult {
+            restore_point_created: false,
+            removed: vec![package],
+            errors: Vec::new(),
+            nonce: "tok456".to_string(),
+        };
+        std::fs::write(
+            removal_result_path(&batch_path),
+            serde_json::to_vec(&result).unwrap(),
+        )
+        .unwrap();
+        let logs = dir.join("logs");
+        assert_eq!(reconcile_orphans(&dir, &logs), 1);
+        let undo = load_removal_undo(&apps_undo_path(&dir));
+        assert_eq!(undo.len(), 1);
+        assert_eq!(undo[0].entries.len(), 1);
+        assert!(!batch_path.exists());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn catalogs_are_well_formed() {

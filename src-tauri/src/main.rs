@@ -10,6 +10,7 @@ mod lockcheck;
 mod manifest;
 mod preflight;
 mod quarantine;
+mod runlock;
 mod safety;
 mod scheduler;
 #[cfg(test)]
