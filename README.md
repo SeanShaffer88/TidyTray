@@ -21,7 +21,7 @@
 
 <br><br>
 
-<img src="assets/demo-scan.gif" width="880" alt="Tidy Smart Scan finds 12.4 GB of temp files, browser caches and shader caches in under 3 seconds">
+<img src="assets/screen-overview.png" width="880" alt="TidyTray overview: 24.5 GB ready to clean, storage bars for five drives">
 
 </div>
 
@@ -36,8 +36,6 @@ TidyTray is a fork of [Tidy](https://github.com/BeeCaptivate/pc-cleanup-optimize
 - **GitHub-style dark theme by default**, with the original light theme kept as an option.
 
 Tier 3 territory stays out on purpose — no registry cleaners, no RAM "optimizers", no Defender or Windows Update removal. See `docs/SAFETY.md` for the full model and `docs/EXCLUDED.md` for what will never be added.
-
-> The screenshots below show the original light theme; the app now starts in the dark theme. Fresh captures are on the way.
 
 ## Contents
 
@@ -62,19 +60,19 @@ Your C: drive is full again, the fans spin up for no reason, and Windows takes f
 
 ### 1. Three-second Smart Scan
 
-<img src="assets/demo-scan.gif" width="100%" alt="Smart Scan sweeping the storage bar and counting cleanable gigabytes">
+<img src="assets/screen-storage.png" width="100%" alt="Storage view: segmented bar per drive, largest files and size buckets">
 
 A parallel directory walker (plain Rust threads, one per core) sweeps every known junk location at once and adds up the space per category: **temporary files** (only older than 24 h, so running installers are safe), **Chrome / Edge / Brave / Firefox caches**, **Windows Update downloads**, **crash dumps and error reports**, **NVIDIA DXCache, D3DSCache and AMD shader caches**, **thumbnail cache** and the **Recycle Bin**. Junctions and symlinks are never followed.
 
 ### 2. One-click cleanup with dry run
 
-<img src="assets/demo-clean.gif" width="100%" alt="Clicking Clean 12.4 GB, categories count down and freed space is shown">
+<img src="assets/screen-cleanup.png" width="100%" alt="Cleanup checklist with per-category file counts and sizes, dry run on">
 
 Pick categories in a clear checklist, see how many files and gigabytes each one holds, and press **Clean**. Dry run is on by default: Tidy walks the exact same files and reports what it *would* delete before you ever let it remove anything. Items that cannot be undone (Recycle Bin, update cache) are marked **Review** and unchecked by default.
 
 ### 3. Who's eating my PC?
 
-<img src="assets/demo-procs.gif" width="100%" alt="Live process list re-sorting by CPU usage with sparklines and plain-English explanations">
+<img src="assets/screen-processes.png" width="100%" alt="Live process list grouped by app with sparklines and plain-English explanations">
 
 Live CPU and memory per app, grouped like a human would (14 Chrome processes = one Chrome row), with 40-second sparklines and a **plain-English "what is this?"** for the processes people search for most: Antimalware Service Executable, Desktop Window Manager, Service Host, Search Indexer, WMI Provider Host, Memory Compression and more. Windows components are flagged so you never end the wrong task.
 
@@ -115,20 +113,42 @@ System folders (`System32`, `WinSxS`, `Program Files`), your personal folders (D
 
 <table>
   <tr>
-    <td><img src="assets/screen-overview.png" alt="Tidy overview: storage bars per drive, RAM pressure gauge, top CPU apps"></td>
-    <td><img src="assets/screen-cleanup.png" alt="Tidy cleanup checklist with temp files, browser caches and shader caches"></td>
+    <td><img src="assets/screen-overview.png" alt="TidyTray overview: cleanable space and storage bars per drive"></td>
+    <td><img src="assets/screen-cleanup.png" alt="TidyTray cleanup checklist with temp files, browser caches and shader caches"></td>
   </tr>
   <tr>
-    <td align="center"><sub><b>Overview</b> — storage, memory pressure, CPU</sub></td>
-    <td align="center"><sub><b>Cleanup</b> — results checklist with dry run</sub></td>
+    <td align="center"><sub><b>Overview</b> — ready to clean, storage at a glance</sub></td>
+    <td align="center"><sub><b>Cleanup</b> — Smart Scan results with dry run</sub></td>
   </tr>
   <tr>
-    <td><img src="assets/screen-processes.png" alt="Tidy processes view explaining what each Windows process does"></td>
-    <td><img src="assets/screen-startup.png" alt="Tidy startup programs list with boot impact ratings"></td>
+    <td><img src="assets/screen-safety.png" alt="TidyTray Safety cleanup: dry-run phase, categories, quarantine and recent runs"></td>
+    <td><img src="assets/screen-tweaks.png" alt="TidyTray Tweaks: staged, previewed, reversible system tweaks"></td>
   </tr>
   <tr>
+    <td align="center"><sub><b>Safety</b> — automatic cleanup, quarantined for 7 days</sub></td>
+    <td align="center"><sub><b>Tweaks</b> — manual changes, always reversible</sub></td>
+  </tr>
+  <tr>
+    <td><img src="assets/screen-apps.png" alt="TidyTray Apps: bundled-app removal catalog with risk badges"></td>
+    <td><img src="assets/screen-processes.png" alt="TidyTray processes view explaining what each Windows process does"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub><b>Apps</b> — remove or install, previewed first</sub></td>
     <td align="center"><sub><b>Processes</b> — who's eating my PC</sub></td>
+  </tr>
+  <tr>
+    <td><img src="assets/screen-startup.png" alt="TidyTray startup programs list with boot impact ratings"></td>
+    <td><img src="assets/screen-memory.png" alt="TidyTray memory pressure gauge and top memory users"></td>
+  </tr>
+  <tr>
     <td align="center"><sub><b>Startup</b> — impact on sign-in time</sub></td>
+    <td align="center"><sub><b>Memory</b> — pressure, not just RAM %</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="assets/screen-storage.png" alt="TidyTray storage view: every drive, largest files, size buckets"></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><sub><b>Storage</b> — where the space went</sub></td>
   </tr>
 </table>
 
@@ -146,7 +166,7 @@ System folders (`System32`, `WinSxS`, `Program Files`), your personal folders (D
 
 ## Download &amp; install
 
-<a class="download-btn-action" href="https://github.com/BeeCaptivate/pc-cleanup-optimizer/releases/latest/download/Main-v1.0.0-win-x64.zip"><img src="assets/download-compact.png" width="230" alt="Download Tidy v1.0.0"></a>
+<a class="download-btn-action" href="https://github.com/SeanShaffer88/TidyTray/releases/latest"><img src="assets/download-compact.png" width="230" alt="Download TidyTray v1.0.0"></a>
 
 1. Download **Tidy-v1.0.0-win-x64.zip** from the latest release.
 2. Right-click the zip → **Extract All…**
@@ -306,7 +326,7 @@ Tidy is an independent open source project and is not affiliated with or endorse
 
 <div align="center">
 <br>
-<a class="download-btn-action" href="https://github.com/BeeCaptivate/pc-cleanup-optimizer/releases/latest/download/Main-v1.0.0-win-x64.zip"><img src="assets/download.png" width="280" alt="Download Tidy for Windows"></a>
+<a class="download-btn-action" href="https://github.com/SeanShaffer88/TidyTray/releases/latest"><img src="assets/download.png" width="280" alt="Download TidyTray for Windows"></a>
 <br>
 <sub>Free · open source · Windows 10 / 11 x64</sub>
 </div>
