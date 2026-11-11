@@ -19,7 +19,7 @@ jobs:
       - name: Format check (safety-core modules)
         # The upstream modules predate rustfmt enforcement and keep their
         # original style; the new safety core is held to rustfmt.
-        run: rustfmt --edition 2021 --check src/sha256.rs src/manifest.rs src/audit.rs src/appconfig.rs src/lockcheck.rs src/quarantine.rs src/cleaner.rs src/safety_tests.rs src/preflight.rs src/safety.rs src/scheduler.rs src/tier2.rs
+        run: rustfmt --edition 2021 --check src/sha256.rs src/manifest.rs src/audit.rs src/appconfig.rs src/lockcheck.rs src/quarantine.rs src/cleaner.rs src/safety_tests.rs src/preflight.rs src/safety.rs src/scheduler.rs src/tier2.rs src/apps.rs
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
       - name: Test
