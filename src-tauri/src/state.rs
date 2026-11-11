@@ -53,6 +53,8 @@ pub struct Settings {
     pub large_file_min_mb: u64,
     pub start_minimized: bool,
     pub scan_on_launch: bool,
+    /// UI theme: "dark" (GitHub-style, the default) or "light" (the original).
+    pub theme: String,
 }
 
 impl Default for Settings {
@@ -65,6 +67,7 @@ impl Default for Settings {
             large_file_min_mb: 500,
             start_minimized: false,
             scan_on_launch: true,
+            theme: "dark".to_string(),
         }
     }
 }
@@ -206,6 +209,7 @@ mod tests {
     fn settings_parse_fills_missing_fields_and_clamps() {
         let s = Settings::parse(r#"{"dryRun": false, "largeFileMinMb": 1, "safeList": ["", "D:\\Projects\\*"]}"#).unwrap();
         assert!(!s.dry_run);
+        assert_eq!(s.theme, "dark", "missing theme must default to dark");
         assert_eq!(s.large_file_min_mb, 50);
         assert_eq!(s.safe_list, vec!["D:\\Projects\\*".to_string()]);
         assert_eq!(s.min_temp_age_hours, 24);
