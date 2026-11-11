@@ -18,6 +18,12 @@
 5. Tier 3 (docs/EXCLUDED.md) is never implemented: no RAM cleaners, no registry cleaners, no Defender/SmartScreen removal, no permanent Windows Update disabling, no bulk disables.
 6. No telemetry, no phone-home.
 
+## Preservation rule (owner, 2026-11-10)
+The upstream project's design, structure and operation are preserved. TidyTray
+work is **additive only**: new capability lands in new modules/files, upstream
+files get only minimal hooks, and existing features are never redesigned,
+removed or behaviour-changed. Mechanical lint fixes are the only exception.
+
 ## Working rules
 - New features are implemented as operations first, then wired to the UI/CLI.
 - Every capability in the window is also available from the command line.
