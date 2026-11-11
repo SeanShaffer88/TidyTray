@@ -62,16 +62,23 @@ pub struct RunContext {
     pub env: HashMap<String, String>,
     pub quarantine: Quarantine,
     pub audit: AuditLog,
-    pub cancel: AtomicBool,
+    pub cancel: std::sync::Arc<AtomicBool>,
 }
 
 impl RunContext {
-    pub fn new(env: HashMap<String, String>, quarantine_root: PathBuf, logs_dir: PathBuf) -> Self {
+    /// Constructor with a shared cancellation flag, so the tray kill switch
+    /// and the UI can stop a run started elsewhere (blueprint §8.1).
+    pub fn with_cancel(
+        env: HashMap<String, String>,
+        quarantine_root: PathBuf,
+        logs_dir: PathBuf,
+        cancel: std::sync::Arc<AtomicBool>,
+    ) -> Self {
         Self {
             env,
             quarantine: Quarantine::new(quarantine_root),
             audit: AuditLog::new(logs_dir),
-            cancel: AtomicBool::new(false),
+            cancel,
         }
     }
 
@@ -378,7 +385,12 @@ mod tests {
         // category with a huge age to exercise the age skip.
         let mut env = HashMap::new();
         env.insert("TEMP".to_string(), temp_root.to_string_lossy().into_owned());
-        let ctx = RunContext::new(env, base.join("Quarantine"), base.join("Logs"));
+        let ctx = RunContext::with_cancel(
+            env,
+            base.join("Quarantine"),
+            base.join("Logs"),
+            std::sync::Arc::new(AtomicBool::new(false)),
+        );
         let mut config = AppConfig::default();
         config.autonomous.categories_enabled = vec!["gpu_shader_cache".into()];
         Fixture { base, ctx, config }
