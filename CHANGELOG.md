@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- M2 Safety screen: a Safety section in the main window — run status with
+  dry-run progress, Run/Pause controls, autonomous schedule and pause
+  preferences, per-category toggles, quarantine review with one-click
+  restore, recent run history and an open-log shortcut. Backed by new
+  `safety_recent_runs`, `safety_quarantine_list`, `safety_open_logs` and
+  `safety_set_pauses` commands and a persisted run history.
+
 - M2 autonomous loop (backend):
   - Task Scheduler integration: enabling autonomous cleanup installs a
     `TidyTray\Autonomous Cleanup` task (weekly/daily per config) that runs
