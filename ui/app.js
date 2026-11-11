@@ -48,53 +48,111 @@ const drive = (mount, label, kind, total, segs) => ({ mount, label, kind, total:
 
   get free() { return this.total - this.segments.reduce((a, s) => a + s.bytes, 0); } });
 
-// ---------- safety screen (blueprint M2 UI) ----------
-
-const SAFETY_MOCK = {
-  loaded: false, loading: false, showQ: false,
-  manifestVersion: '1',
-  categories: [
-    ['temp_user', 'Your temp files', false, true, 7], ['temp_windows', 'Windows temp', true, false, 30],
-    ['browser_cache_chromium', 'Chromium browser cache', false, true, 14], ['browser_cache_firefox', 'Firefox cache', false, true, 14],
-    ['gpu_shader_cache', 'Graphics shader cache', false, true, 7], ['thumbnail_cache', 'Thumbnail cache', false, true, 0],
-    ['crash_dumps', 'Crash reports', false, true, 30], ['delivery_optimization', 'Delivery Optimization cache', true, false, 30],
-    ['ps_history', 'PowerShell history', false, false, 0],
-  ].map(([id, displayName, requiresAdmin, enabledByDefault, minAgeDays]) => ({ id, displayName, requiresAdmin, enabledByDefault, minAgeDays })),
-  enabledCategories: ['temp_user', 'browser_cache_chromium', 'browser_cache_firefox', 'gpu_shader_cache', 'thumbnail_cache', 'crash_dumps'],
-  autonomousEnabled: false, dryRunsCompleted: 2, dryRunPhaseComplete: false,
-  quarantineFiles: 312, quarantineBytes: 486 * MB, running: false, schedulerInstalled: false,
-  scheduleMode: 'weekly', scheduleDay: 'Sunday', scheduleHour: 3,
-  pauseOnFullscreen: true, batteryPauseBelowPct: 30,
-  lastRun: { at: new Date(Date.now() - 86400000).toISOString(), source: 'ui', outcome: 'complete', detail: '', dryRun: true, files: 9214, bytes: 1.8 * GB },
-  preflight: { batteryPercent: null, onAcPower: true, fullscreenApp: false, idleSeconds: 0, freeSpaceGb: 96.4 },
-  runs: [
-    { at: new Date(Date.now() - 86400000).toISOString(), source: 'ui', outcome: 'complete', detail: '', dryRun: true, files: 9214, bytes: 1.8 * GB },
-    { at: new Date(Date.now() - 86600000).toISOString(), source: 'ui', outcome: 'complete', detail: '', dryRun: true, files: 9180, bytes: 1.8 * GB },
-    { at: new Date(Date.now() - 172800000).toISOString(), source: 'scheduled', outcome: 'skipped', detail: 'a fullscreen app is active', dryRun: false, files: 0, bytes: 0 },
-  ],
-  quarantine: [],
-};
-
-const CAT_BLURB = {
-  temp_user: 'Your %TEMP% folder', temp_windows: 'System-wide temp folder',
-  browser_cache_chromium: 'Chrome, Edge, Brave and other Chromium browsers',
-  browser_cache_firefox: 'Firefox cache storage',
-  gpu_shader_cache: 'Rebuilt automatically by your games',
-  thumbnail_cache: 'Explorer previews, rebuilt as you browse',
-  crash_dumps: 'Crash dumps and error reports',
-  delivery_optimization: 'Windows Update download cache',
-  ps_history: 'Command history file only',
-};
-
-const RUN_SOURCE = { ui: 'Manual run', tray: 'Tray run', scheduled: 'Scheduled run', cli: 'Command line' };
-
-function fmtRunAt(iso) {
-  const d = new Date(iso);
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' · ' +
-    d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-}
-
+// ---------- safety screen (blueprint M2 UI) ----------
 
+
+
+const SAFETY_MOCK = {
+
+  loaded: false, loading: false, showQ: false,
+
+  manifestVersion: '1',
+
+  categories: [
+
+    ['temp_user', 'Your temp files', false, true, 7], ['temp_windows', 'Windows temp', true, false, 30],
+
+    ['browser_cache_chromium', 'Chromium browser cache', false, true, 14], ['browser_cache_firefox', 'Firefox cache', false, true, 14],
+
+    ['gpu_shader_cache', 'Graphics shader cache', false, true, 7], ['thumbnail_cache', 'Thumbnail cache', false, true, 0],
+
+    ['crash_dumps', 'Crash reports', false, true, 30], ['delivery_optimization', 'Delivery Optimization cache', true, false, 30],
+
+    ['ps_history', 'PowerShell history', false, false, 0],
+
+  ].map(([id, displayName, requiresAdmin, enabledByDefault, minAgeDays]) => ({ id, displayName, requiresAdmin, enabledByDefault, minAgeDays })),
+
+  enabledCategories: ['temp_user', 'browser_cache_chromium', 'browser_cache_firefox', 'gpu_shader_cache', 'thumbnail_cache', 'crash_dumps'],
+
+  autonomousEnabled: false, dryRunsCompleted: 2, dryRunPhaseComplete: false,
+
+  quarantineFiles: 312, quarantineBytes: 486 * MB, running: false, schedulerInstalled: false,
+
+  scheduleMode: 'weekly', scheduleDay: 'Sunday', scheduleHour: 3,
+
+  pauseOnFullscreen: true, batteryPauseBelowPct: 30,
+
+  lastRun: { at: new Date(Date.now() - 86400000).toISOString(), source: 'ui', outcome: 'complete', detail: '', dryRun: true, files: 9214, bytes: 1.8 * GB },
+
+  preflight: { batteryPercent: null, onAcPower: true, fullscreenApp: false, idleSeconds: 0, freeSpaceGb: 96.4 },
+
+  runs: [
+
+    { at: new Date(Date.now() - 86400000).toISOString(), source: 'ui', outcome: 'complete', detail: '', dryRun: true, files: 9214, bytes: 1.8 * GB },
+
+    { at: new Date(Date.now() - 86600000).toISOString(), source: 'ui', outcome: 'complete', detail: '', dryRun: true, files: 9180, bytes: 1.8 * GB },
+
+    { at: new Date(Date.now() - 172800000).toISOString(), source: 'scheduled', outcome: 'skipped', detail: 'a fullscreen app is active', dryRun: false, files: 0, bytes: 0 },
+
+  ],
+
+  quarantine: [],
+
+};
+
+
+
+const CAT_BLURB = {
+
+  temp_user: 'Your %TEMP% folder', temp_windows: 'System-wide temp folder',
+
+  browser_cache_chromium: 'Chrome, Edge, Brave and other Chromium browsers',
+
+  browser_cache_firefox: 'Firefox cache storage',
+
+  gpu_shader_cache: 'Rebuilt automatically by your games',
+
+  thumbnail_cache: 'Explorer previews, rebuilt as you browse',
+
+  crash_dumps: 'Crash dumps and error reports',
+
+  delivery_optimization: 'Windows Update download cache',
+
+  ps_history: 'Command history file only',
+
+};
+
+
+
+const RUN_SOURCE = { ui: 'Manual run', tray: 'Tray run', scheduled: 'Scheduled run', cli: 'Command line' };
+
+
+
+function fmtRunAt(iso) {
+
+  const d = new Date(iso);
+
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' · ' +
+
+    d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+}
+
+
+
+
+const TWEAKS_MOCK = [
+  { id: 'telemetry_basic', title: 'Diagnostic data', desc: 'Limits Windows diagnostic data to the basic level.', group: 'Privacy', needsAdmin: true, recommended: true, applied: true, onLabel: 'Basic (minimum)', offLabel: 'Default' },
+  { id: 'advertising_id_off', title: 'Advertising ID', desc: 'Stops apps using your advertising ID for personalized ads.', group: 'Privacy', needsAdmin: false, recommended: true, applied: false, onLabel: 'Off for all apps', offLabel: 'Default' },
+  { id: 'activity_history_off', title: 'Activity history', desc: 'Stops Windows storing your activity timeline on this device.', group: 'Privacy', needsAdmin: true, recommended: true, applied: false, onLabel: 'Off', offLabel: 'Default' },
+  { id: 'tailored_experiences_off', title: 'Tailored experiences', desc: 'Turns off tips and suggestions based on diagnostic data.', group: 'Privacy', needsAdmin: false, recommended: true, applied: false, onLabel: 'Off', offLabel: 'Default' },
+  { id: 'copilot_off', title: 'Microsoft Copilot', desc: 'Hides Copilot and turns off its taskbar button.', group: 'Debloat', needsAdmin: false, recommended: true, applied: false, onLabel: 'Hidden; taskbar button off', offLabel: 'Default' },
+  { id: 'widgets_off', title: 'Widgets board', desc: 'Turns off the Widgets board and its taskbar icon.', group: 'Debloat', needsAdmin: false, recommended: true, applied: true, onLabel: 'Off', offLabel: 'Default' },
+  { id: 'search_highlights_off', title: 'Search highlights', desc: 'Removes rotating highlights and promotions from the search box.', group: 'Debloat', needsAdmin: false, recommended: true, applied: false, onLabel: 'Off', offLabel: 'Default' },
+  { id: 'file_extensions_on', title: 'File extensions', desc: 'Always shows file name extensions in Explorer.', group: 'Explorer & taskbar', needsAdmin: false, recommended: true, applied: false, onLabel: 'Shown', offLabel: 'Hidden' },
+  { id: 'chat_icon_off', title: 'Chat icon', desc: 'Removes the Teams Chat icon from the taskbar.', group: 'Explorer & taskbar', needsAdmin: false, recommended: true, applied: false, onLabel: 'Removed', offLabel: 'Default' },
+  { id: 'long_paths_on', title: 'Long paths', desc: 'Allows apps to use file paths longer than 260 characters.', group: 'Explorer & taskbar', needsAdmin: true, recommended: false, applied: false, onLabel: 'Allowed', offLabel: 'Default (260 max)' },
+];
 const S = {
 
   host: 'DESKTOP-7QK2M4R', os: 'Windows 11 Pro 24H2', cpu: 23,
@@ -194,6 +252,7 @@ const S = {
   sort: 'cpu', sel: 'chrome.exe', open: { browser: true }, scanP: 1, scanMs: 2840, cleanP: null, dry: true, query: '',
 
   safety: SAFETY_MOCK,
+  tweaks: TWEAKS_MOCK, twkStaged: {}, twkPreview: null, twkQuery: '', twkUndo: null, twkMsg: null, twkBusy: false,
 
 };
 
@@ -512,98 +571,185 @@ V.cleanup = () => {
 
 
 
-
-async function loadSafety() {
-  const sf = S.safety;
-  if (!tauri || sf.loading) return;
-  sf.loading = true;
-  try {
-    const st = await invoke('safety_status');
-    Object.assign(sf, st, { loaded: true });
-    sf.runs = await invoke('safety_recent_runs', { limit: 8 }).catch(() => sf.runs);
-    if (sf.showQ) sf.quarantine = await invoke('safety_quarantine_list').catch(() => sf.quarantine);
-  } catch (e) { /* keep last known state */ }
-  sf.loading = false;
-  if ((location.hash.slice(1) || 'overview') === 'safety') render();
-}
-
-async function runSafety(apply) {
-  const sf = S.safety;
-  sf.running = true; render();
-  try { await invoke('safety_clean_now', { apply }); } catch (e) { /* surfaced via last run */ }
-  sf.running = false;
-  await loadSafety();
-}
-
-V.safety = () => {
-  const sf = S.safety;
-  const phase = sf.dryRunPhaseComplete, left = 3 - sf.dryRunsCompleted;
-  const statusTitle = sf.running ? 'Cleanup running…'
-    : !phase ? `Dry-run phase — ${sf.dryRunsCompleted} of 3 complete`
-    : sf.autonomousEnabled ? 'Automatic cleanup is on' : 'Ready — automatic cleanup is off';
-  const statusSub = sf.running ? 'You can pause it at any time; files already moved stay in quarantine.'
-    : !phase ? `${left === 1 ? 'One more practice run unlocks' : left + ' more practice runs unlock'} automatic cleanup. Practice runs change nothing.`
-    : sf.autonomousEnabled ? `Runs ${sf.scheduleMode === 'daily' ? 'daily' : 'every ' + sf.scheduleDay} at ${sf.scheduleHour}:00 · only the categories below`
-    : 'Practice phase complete. Turn on automatic cleanup, or run a cleanup whenever you like.';
-  const lr = sf.lastRun;
-  const lastLine = !lr ? 'No runs yet'
-    : lr.outcome === 'skipped' ? `Last run ${fmtRunAt(lr.at)} · skipped — ${esc(lr.detail)}`
-    : `Last run ${fmtRunAt(lr.at)} · ${lr.dryRun ? 'would free' : 'freed'} ${fmt(lr.bytes)}${lr.dryRun ? ' · nothing was moved' : ''}`;
-  const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-  const catRow = c => {
-    const on = sf.enabledCategories.includes(c.id);
-    const age = c.minAgeDays > 0 ? ` · older than ${c.minAgeDays} days` : '';
-    return `<div class="row"><div class="nm"><b>${esc(c.displayName)}</b><small>${esc(CAT_BLURB[c.id] || '')}${age}</small></div>
-      ${c.requiresAdmin ? '<span class="pill warn">Admin</span>' : ''}<span class="toggle ${on ? 'on' : ''}" data-sf-cat="${esc(c.id)}"></span></div>`;
-  };
-  const runRow = r => `<div class="logrow"><span class="t">${fmtRunAt(r.at)}</span>
-      <span class="what">${RUN_SOURCE[r.source] || 'Run'}${r.dryRun ? ' (practice)' : ''} · <span class="${r.outcome === 'complete' ? 'ok' : 'skip'}">${esc(r.outcome)}${r.detail ? ' — ' + esc(r.detail) : ''}</span></span>
-      <span class="amt">${r.bytes ? fmt(r.bytes) : '—'}</span></div>`;
-  const qRow = q => `<div class="logrow"><span class="what" title="${esc(q.originalPath)}">${esc(q.originalPath.split('\\').pop())}<small class="muted" style="display:block">${esc(q.category)} · ${fmtRunAt(q.ts)}</small></span>
-      <span class="amt">${fmt(q.size)}</span><button class="btn" data-act="sf-restore" data-path="${esc(q.quarantinePath)}">Restore</button></div>`;
-
-  return head('Safety cleanup', 'Automatic cleanup that only touches caches and temp files — everything is quarantined for 7 days, never deleted outright.') +
-  `<div class="grid g2">
-    <div class="card pad"><div class="ch"><h2>Status</h2>${sf.running ? '<span class="pill warn">Running</span>' : ''}</div>
-      <div class="statusrow"><div class="shieldic">${ic('safety')}</div><div><b>${statusTitle}</b><small>${statusSub}</small></div></div>
-      ${!phase ? `<div class="sfbar"><i style="width:${sf.dryRunsCompleted / 3 * 100}%"></i></div>` : ''}
-      <div class="barlbl">${lastLine}</div>
-      <div class="btnrow"><button class="btn go" data-act="sf-run" ${sf.running ? 'disabled' : ''}>${sf.running ? 'Running…' : phase ? 'Run cleanup now' : 'Run practice cleanup'}</button>
-      <button class="btn" data-act="sf-pause" ${sf.running ? '' : 'disabled'}>Pause</button></div></div>
-
-    <div class="card pad"><div class="ch"><h2>Automatic cleanup</h2><span class="r">${phase ? (sf.schedulerInstalled ? 'Scheduled in Windows' : 'Not scheduled') : 'Locked until dry runs finish'}</span></div>
-      <div class="rows">
-      <div class="row"><div class="nm"><b>Run automatically</b><small>Only the categories below, on the schedule below</small></div>
-        <span class="toggle ${sf.autonomousEnabled ? 'on' : ''} ${phase ? '' : 'locked'}" data-act="sf-auto"></span></div>
-      <div class="row"><div class="nm"><b>Schedule</b></div>
-        <select class="sfsel" id="sf-mode"><option value="weekly" ${sf.scheduleMode === 'weekly' ? 'selected' : ''}>Weekly</option><option value="daily" ${sf.scheduleMode === 'daily' ? 'selected' : ''}>Daily</option></select>
-        <select class="sfsel" id="sf-day" ${sf.scheduleMode === 'daily' ? 'disabled' : ''}>${days.map(d => `<option ${d === sf.scheduleDay ? 'selected' : ''}>${d}</option>`).join('')}</select>
-        <select class="sfsel" id="sf-hour">${Array.from({ length: 24 }, (_, h) => `<option value="${h}" ${h === sf.scheduleHour ? 'selected' : ''}>${h}:00</option>`).join('')}</select></div>
-      <div class="row"><div class="nm"><b>Pause on low battery</b><small>Below ${sf.batteryPauseBelowPct}%, while on battery power</small></div>
-        <span class="toggle ${sf.batteryPauseBelowPct > 0 ? 'on' : ''}" data-act="sf-battery"></span></div>
-      <div class="row"><div class="nm"><b>Pause during fullscreen apps</b><small>Games and presentations are never interrupted</small></div>
-        <span class="toggle ${sf.pauseOnFullscreen ? 'on' : ''}" data-act="sf-fullscreen"></span></div>
-      </div></div>
-
-    <div class="card pad"><div class="ch"><h2>Categories</h2><span class="r">${sf.enabledCategories.length} of ${sf.categories.length} on</span></div>
-      <div class="rows">${sf.categories.map(catRow).join('')}</div></div>
-
-    <div class="card pad"><div class="ch"><h2>Quarantine</h2><span class="r">${n(sf.quarantineFiles)} files · ${fmt(sf.quarantineBytes)}</span></div>
-      <p><b>Nothing is deleted for 7 days</b></p>
-      <p class="muted" style="margin-top:4px">Anything a cleanup moved can be put back with one click until it expires.</p>
-      <div class="btnrow"><button class="btn" data-act="sf-review">${sf.showQ ? 'Hide list' : 'Review & restore…'}</button>
-      <button class="btn" data-act="sf-purge">Empty now</button></div>
-      ${sf.showQ ? `<div style="margin-top:10px">${sf.quarantine.length ? sf.quarantine.map(qRow).join('') : '<p class="muted">Quarantine is empty.</p>'}</div>` : ''}
-      <div class="ch" style="margin-top:18px"><h2>Recent runs</h2></div>
-      ${sf.runs.length ? sf.runs.map(runRow).join('') : '<p class="muted">No runs yet.</p>'}
-      <div class="btnrow"><button class="btn" data-act="sf-log">Open full log</button></div></div>
-  </div>`;
-};
+
+
+async function loadSafety() {
+
+  const sf = S.safety;
+
+  if (!tauri || sf.loading) return;
+
+  sf.loading = true;
+
+  try {
+
+    const st = await invoke('safety_status');
+
+    Object.assign(sf, st, { loaded: true });
+
+    sf.runs = await invoke('safety_recent_runs', { limit: 8 }).catch(() => sf.runs);
+
+    if (sf.showQ) sf.quarantine = await invoke('safety_quarantine_list').catch(() => sf.quarantine);
+
+  } catch (e) { /* keep last known state */ }
+
+  sf.loading = false;
+
+  if ((location.hash.slice(1) || 'overview') === 'safety') render();
+
+}
+
+
+
+async function runSafety(apply) {
+
+  const sf = S.safety;
+
+  sf.running = true; render();
+
+  try { await invoke('safety_clean_now', { apply }); } catch (e) { /* surfaced via last run */ }
+
+  sf.running = false;
+
+  await loadSafety();
+
+}
+
+
+
+V.safety = () => {
+
+  const sf = S.safety;
+
+  const phase = sf.dryRunPhaseComplete, left = 3 - sf.dryRunsCompleted;
+
+  const statusTitle = sf.running ? 'Cleanup running…'
+
+    : !phase ? `Dry-run phase — ${sf.dryRunsCompleted} of 3 complete`
+
+    : sf.autonomousEnabled ? 'Automatic cleanup is on' : 'Ready — automatic cleanup is off';
+
+  const statusSub = sf.running ? 'You can pause it at any time; files already moved stay in quarantine.'
+
+    : !phase ? `${left === 1 ? 'One more practice run unlocks' : left + ' more practice runs unlock'} automatic cleanup. Practice runs change nothing.`
+
+    : sf.autonomousEnabled ? `Runs ${sf.scheduleMode === 'daily' ? 'daily' : 'every ' + sf.scheduleDay} at ${sf.scheduleHour}:00 · only the categories below`
+
+    : 'Practice phase complete. Turn on automatic cleanup, or run a cleanup whenever you like.';
+
+  const lr = sf.lastRun;
+
+  const lastLine = !lr ? 'No runs yet'
+
+    : lr.outcome === 'skipped' ? `Last run ${fmtRunAt(lr.at)} · skipped — ${esc(lr.detail)}`
+
+    : `Last run ${fmtRunAt(lr.at)} · ${lr.dryRun ? 'would free' : 'freed'} ${fmt(lr.bytes)}${lr.dryRun ? ' · nothing was moved' : ''}`;
+
+  const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+  const catRow = c => {
+
+    const on = sf.enabledCategories.includes(c.id);
+
+    const age = c.minAgeDays > 0 ? ` · older than ${c.minAgeDays} days` : '';
+
+    return `<div class="row"><div class="nm"><b>${esc(c.displayName)}</b><small>${esc(CAT_BLURB[c.id] || '')}${age}</small></div>
+
+      ${c.requiresAdmin ? '<span class="pill warn">Admin</span>' : ''}<span class="toggle ${on ? 'on' : ''}" data-sf-cat="${esc(c.id)}"></span></div>`;
+
+  };
+
+  const runRow = r => `<div class="logrow"><span class="t">${fmtRunAt(r.at)}</span>
+
+      <span class="what">${RUN_SOURCE[r.source] || 'Run'}${r.dryRun ? ' (practice)' : ''} · <span class="${r.outcome === 'complete' ? 'ok' : 'skip'}">${esc(r.outcome)}${r.detail ? ' — ' + esc(r.detail) : ''}</span></span>
+
+      <span class="amt">${r.bytes ? fmt(r.bytes) : '—'}</span></div>`;
+
+  const qRow = q => `<div class="logrow"><span class="what" title="${esc(q.originalPath)}">${esc(q.originalPath.split('\\').pop())}<small class="muted" style="display:block">${esc(q.category)} · ${fmtRunAt(q.ts)}</small></span>
+
+      <span class="amt">${fmt(q.size)}</span><button class="btn" data-act="sf-restore" data-path="${esc(q.quarantinePath)}">Restore</button></div>`;
+
+
+
+  return head('Safety cleanup', 'Automatic cleanup that only touches caches and temp files — everything is quarantined for 7 days, never deleted outright.') +
+
+  `<div class="grid g2">
+
+    <div class="card pad"><div class="ch"><h2>Status</h2>${sf.running ? '<span class="pill warn">Running</span>' : ''}</div>
+
+      <div class="statusrow"><div class="shieldic">${ic('safety')}</div><div><b>${statusTitle}</b><small>${statusSub}</small></div></div>
+
+      ${!phase ? `<div class="sfbar"><i style="width:${sf.dryRunsCompleted / 3 * 100}%"></i></div>` : ''}
+
+      <div class="barlbl">${lastLine}</div>
+
+      <div class="btnrow"><button class="btn go" data-act="sf-run" ${sf.running ? 'disabled' : ''}>${sf.running ? 'Running…' : phase ? 'Run cleanup now' : 'Run practice cleanup'}</button>
+
+      <button class="btn" data-act="sf-pause" ${sf.running ? '' : 'disabled'}>Pause</button></div></div>
+
+
+
+    <div class="card pad"><div class="ch"><h2>Automatic cleanup</h2><span class="r">${phase ? (sf.schedulerInstalled ? 'Scheduled in Windows' : 'Not scheduled') : 'Locked until dry runs finish'}</span></div>
+
+      <div class="rows">
+
+      <div class="row"><div class="nm"><b>Run automatically</b><small>Only the categories below, on the schedule below</small></div>
+
+        <span class="toggle ${sf.autonomousEnabled ? 'on' : ''} ${phase ? '' : 'locked'}" data-act="sf-auto"></span></div>
+
+      <div class="row"><div class="nm"><b>Schedule</b></div>
+
+        <select class="sfsel" id="sf-mode"><option value="weekly" ${sf.scheduleMode === 'weekly' ? 'selected' : ''}>Weekly</option><option value="daily" ${sf.scheduleMode === 'daily' ? 'selected' : ''}>Daily</option></select>
+
+        <select class="sfsel" id="sf-day" ${sf.scheduleMode === 'daily' ? 'disabled' : ''}>${days.map(d => `<option ${d === sf.scheduleDay ? 'selected' : ''}>${d}</option>`).join('')}</select>
+
+        <select class="sfsel" id="sf-hour">${Array.from({ length: 24 }, (_, h) => `<option value="${h}" ${h === sf.scheduleHour ? 'selected' : ''}>${h}:00</option>`).join('')}</select></div>
+
+      <div class="row"><div class="nm"><b>Pause on low battery</b><small>Below ${sf.batteryPauseBelowPct}%, while on battery power</small></div>
+
+        <span class="toggle ${sf.batteryPauseBelowPct > 0 ? 'on' : ''}" data-act="sf-battery"></span></div>
+
+      <div class="row"><div class="nm"><b>Pause during fullscreen apps</b><small>Games and presentations are never interrupted</small></div>
+
+        <span class="toggle ${sf.pauseOnFullscreen ? 'on' : ''}" data-act="sf-fullscreen"></span></div>
+
+      </div></div>
+
+
+
+    <div class="card pad"><div class="ch"><h2>Categories</h2><span class="r">${sf.enabledCategories.length} of ${sf.categories.length} on</span></div>
+
+      <div class="rows">${sf.categories.map(catRow).join('')}</div></div>
+
+
+
+    <div class="card pad"><div class="ch"><h2>Quarantine</h2><span class="r">${n(sf.quarantineFiles)} files · ${fmt(sf.quarantineBytes)}</span></div>
+
+      <p><b>Nothing is deleted for 7 days</b></p>
+
+      <p class="muted" style="margin-top:4px">Anything a cleanup moved can be put back with one click until it expires.</p>
+
+      <div class="btnrow"><button class="btn" data-act="sf-review">${sf.showQ ? 'Hide list' : 'Review & restore…'}</button>
+
+      <button class="btn" data-act="sf-purge">Empty now</button></div>
+
+      ${sf.showQ ? `<div style="margin-top:10px">${sf.quarantine.length ? sf.quarantine.map(qRow).join('') : '<p class="muted">Quarantine is empty.</p>'}</div>` : ''}
+
+      <div class="ch" style="margin-top:18px"><h2>Recent runs</h2></div>
+
+      ${sf.runs.length ? sf.runs.map(runRow).join('') : '<p class="muted">No runs yet.</p>'}
+
+      <div class="btnrow"><button class="btn" data-act="sf-log">Open full log</button></div></div>
+
+  </div>`;
+
+};
+
 
 
 // ---------- shell ----------
 
-const NAV = [['overview', 'Overview'], ['memory', 'Memory'], ['storage', 'Storage'], ['processes', 'Processes'], ['startup', 'Startup'], ['cleanup', 'Cleanup'], ['safety', 'Safety']];
+const NAV = [['overview', 'Overview'], ['memory', 'Memory'], ['storage', 'Storage'], ['processes', 'Processes'], ['startup', 'Startup'], ['cleanup', 'Cleanup'], ['safety', 'Safety'], ['tweaks', 'Tweaks']];
 
 function render() {
 
@@ -618,6 +764,8 @@ function render() {
   if (r === 'processes') procRows(sortedProcs());
 
   if (r === 'safety') loadSafety();
+
+  if (r === 'tweaks') loadTweaks();
 
   $('#pc-cpu').textContent = S.cpu + '%';
 
@@ -703,6 +851,20 @@ document.addEventListener('click', e => {
 
   if (a === 'sf-restore') invoke('safety_restore', { path: t.dataset.path }).then(() => loadSafety()).catch(err => alert(String(err)));
 
+  if (a === 'twk-toggle') { const tw = S.tweaks.find(x => x.id === t.dataset.twk); if (tw) { const next = !twkTarget(tw); if (next === tw.applied) delete S.twkStaged[tw.id]; else S.twkStaged[tw.id] = next; S.twkPreview = null; render(); } }
+
+  if (a === 'twk-preset') { for (const tw of S.tweaks) if (tw.recommended && !tw.applied) S.twkStaged[tw.id] = true; S.twkPreview = null; render(); }
+
+  if (a === 'twk-discard') { S.twkStaged = {}; S.twkPreview = null; render(); }
+
+  if (a === 'twk-preview') twkPreviewStaged();
+
+  if (a === 'twk-cancel') { S.twkPreview = null; render(); }
+
+  if (a === 'twk-apply') twkApply();
+
+  if (a === 'twk-undo') twkUndo();
+
   if (a === 'sf-purge') { if (confirm('Empty the quarantine now? Files in it will be permanently deleted.')) invoke('safety_purge_quarantine').then(() => loadSafety()).catch(() => null); }
 
   if (a === 'sf-log') invoke('safety_open_logs').catch(() => null);
@@ -728,6 +890,7 @@ document.addEventListener('click', e => {
 });
 
 document.addEventListener('input', e => { if (e.target.id === 'q') { S.query = e.target.value; $('#tbody').innerHTML = ''; procRows(sortedProcs()); } });
+document.addEventListener('input', e => { if (e.target.id === 'twk-q') { S.twkQuery = e.target.value; const rows = $('#twk-rows'); if (rows) rows.innerHTML = twkRows(); } });
 
 document.addEventListener('change', e => {
 
@@ -742,6 +905,90 @@ document.addEventListener('change', e => {
 });
 
 
+
+// ---------- Tier 2 tweaks (blueprint M4) ----------
+const twkTarget = t => (t.id in S.twkStaged ? S.twkStaged[t.id] : t.applied);
+function twkRows() {
+  const q = S.twkQuery.trim().toLowerCase();
+  const groups = [...new Set(S.tweaks.map(t => t.group))];
+  return groups.map(g => {
+    const rows = S.tweaks.filter(t => t.group === g && (!q || (t.title + ' ' + t.desc).toLowerCase().includes(q)));
+    if (!rows.length) return '';
+    return `<div class="grp">${esc(g)}</div><div class="card tlist">${rows.map(t => {
+      const staged = t.id in S.twkStaged;
+      const target = twkTarget(t);
+      const tag = staged ? '<span class="tag stg">Staged</span>' : (t.applied ? '<span class="tag app">Applied</span>' : '<span class="tag">Default</span>');
+      return `<div class="trow"><div class="tt"><b>${esc(t.title)}</b><span>${esc(t.desc)}</span></div>${t.needsAdmin ? '<span class="tag">Admin</span>' : ''}${tag}<span class="toggle ${target ? 'on' : ''}" data-act="twk-toggle" data-twk="${t.id}"></span></div>`;
+    }).join('')}</div>`;
+  }).join('') || '<div class="card"><p class="muted">No tweaks match your search.</p></div>';
+}
+V.tweaks = () => {
+  const applied = S.tweaks.filter(t => t.applied).length;
+  const stagedCount = Object.keys(S.twkStaged).length;
+  const adminCount = S.twkPreview ? S.twkPreview.filter(c => c.needsAdmin).length : 0;
+  return `
+  <div class="pagehead"><div><h1>Tweaks</h1><p>Manual system changes — staged first, previewed, always reversible.</p></div>
+  <span class="pillok">● ${S.tweaks.length} tweaks · ${applied} applied</span></div>
+  <div class="note"><span>ⓘ</span><span>Flipping a switch only <b>stages</b> a change — nothing touches your system until you review the preview and confirm. Applying records the previous values and creates a System Restore point when possible, so <b>Undo</b> always works.</span></div>
+  ${S.twkMsg ? `<div class="note" style="margin-top:10px"><span>✓</span><span>${esc(S.twkMsg)}</span></div>` : ''}
+  <div class="toolbar">
+    <input id="twk-q" class="search" type="text" placeholder="Search tweaks…" value="${esc(S.twkQuery)}">
+    <button class="btn go" data-act="twk-preset" ${S.twkBusy ? 'disabled' : ''}>Apply Recommended preset</button>
+    <button class="btn" data-act="twk-undo" ${S.twkUndo ? '' : 'disabled style="opacity:.45"'}>Undo last change${S.twkUndo ? ` (${S.twkUndo})` : ''}</button>
+  </div>
+  <div id="twk-rows">${twkRows()}</div>
+  ${stagedCount ? `<div class="stagebar"><b>${stagedCount} change${stagedCount === 1 ? '' : 's'} staged</b><span class="muted">Nothing has been applied yet.</span><span class="sp"></span><button class="btn" data-act="twk-discard">Discard</button><button class="btn go" data-act="twk-preview">Preview &amp; apply…</button></div>` : ''}
+  ${S.twkPreview ? `<aside class="sheet">
+    <h3>Preview changes</h3>
+    <p class="sheet-sub">Exactly what will change. Previous values are recorded for Undo; a System Restore point is created first when possible.</p>
+    ${S.twkPreview.map(c => `<div class="chg"><b>${esc(c.title)}</b><div class="vals"><em>${esc(c.fromLabel)}</em> → <strong>${esc(c.toLabel)}</strong></div></div>`).join('')}
+    ${adminCount ? `<p class="sheet-sub" style="margin-top:12px">${adminCount} of these need administrator rights — Windows will ask once when you apply.</p>` : ''}
+    <div style="display:flex;gap:8px;margin-top:6px"><button class="btn go" style="flex:1" data-act="twk-apply" ${S.twkBusy ? 'disabled' : ''}>${S.twkBusy ? 'Applying…' : 'Create restore point &amp; apply'}</button><button class="btn" data-act="twk-cancel">Cancel</button></div>
+  </aside>` : ''}`;
+};
+async function loadTweaks() {
+  if (!IN_TAURI) return;
+  try {
+    S.tweaks = await invoke('tier2_list');
+    S.twkUndo = await invoke('tier2_undo_available');
+    if ((location.hash.slice(1) || 'overview') === 'tweaks') render();
+  } catch (e) { console.error(e); }
+}
+async function twkPreviewStaged() {
+  const changes = Object.entries(S.twkStaged).map(([id, applied]) => ({ id, applied }));
+  if (!changes.length) return;
+  if (!IN_TAURI) {
+    S.twkPreview = changes.map(c => { const t = S.tweaks.find(x => x.id === c.id); return { id: c.id, title: t.title, fromLabel: t.applied ? t.onLabel : t.offLabel, toLabel: c.applied ? t.onLabel : t.offLabel, needsAdmin: t.needsAdmin }; });
+    render(); return;
+  }
+  try { S.twkPreview = await invoke('tier2_preview', { changes }); } catch (e) { console.error(e); }
+  render();
+}
+async function twkApply() {
+  const changes = Object.entries(S.twkStaged).map(([id, applied]) => ({ id, applied }));
+  S.twkBusy = true; render();
+  if (!IN_TAURI) {
+    for (const c of changes) { const t = S.tweaks.find(x => x.id === c.id); if (t) t.applied = c.applied; }
+    S.twkUndo = changes.length; S.twkMsg = 'Changes applied. A restore point was created and the previous values were recorded — Undo can reverse this.';
+    S.twkStaged = {}; S.twkPreview = null; S.twkBusy = false; render(); return;
+  }
+  try {
+    const r = await invoke('tier2_apply', { changes });
+    S.twkMsg = r.nothingToDo ? 'Nothing to apply — everything is already in that state.'
+      : `${r.appliedIds.length} change${r.appliedIds.length === 1 ? '' : 's'} applied.${r.restorePointCreated ? ' A System Restore point was created.' : ' No restore point could be created — the recorded previous values still make Undo work.'}${r.failed.length ? ` ${r.failed.length} could not be applied (see the log).` : ''}`;
+    S.twkStaged = {}; S.twkPreview = null;
+  } catch (e) { S.twkMsg = 'Apply failed: ' + e; }
+  S.twkBusy = false;
+  await loadTweaks(); render();
+}
+async function twkUndo() {
+  if (!IN_TAURI) { S.twkUndo = null; S.twkMsg = 'Undone — previous values restored.'; render(); return; }
+  try {
+    const r = await invoke('tier2_undo_last');
+    S.twkMsg = r.nothingToUndo ? 'Nothing to undo.' : `Undid ${r.restoredIds.length} change${r.restoredIds.length === 1 ? '' : 's'} — previous values restored.${r.failed.length ? ' Some values could not be restored and were kept for the next Undo.' : ''}`;
+  } catch (e) { S.twkMsg = 'Undo failed: ' + e; }
+  await loadTweaks(); render();
+}
 
 // ---------- live data from the Rust backend ----------
 
