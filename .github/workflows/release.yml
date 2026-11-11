@@ -1,0 +1,95 @@
+name: Release
+
+# Builds the two release assets in the project's fixed shape —
+# TidyTray-v{VERSION}-x64-Setup.exe + TidyTray-v{VERSION}-x64-Portable.zip
+# + SHA256SUMS.txt — and publishes them as a GitHub Release.
+# Runs when a v* tag is pushed, or manually from the Actions tab
+# (a manual run creates the v{version} tag from tauri.conf.json first).
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2.0" --locked
+
+      - name: Verify tag matches the app version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $conf = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          $tagVersion = $env:GITHUB_REF_NAME -replace '^v', ''
+          if ($conf.version -ne $tagVersion) {
+            Write-Error "Tag $env:GITHUB_REF_NAME does not match tauri.conf.json version $($conf.version)"
+            exit 1
+          }
+
+      - name: Build (NSIS installer + binary)
+        working-directory: src-tauri
+        run: cargo tauri build
+
+      - name: Stage release assets
+        shell: pwsh
+        run: |
+          $conf = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          $ver = $conf.version
+          $bin = $conf.mainBinaryName
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $installer = Get-ChildItem "src-tauri/target/release/bundle/nsis/*.exe" | Select-Object -First 1
+          if (-not $installer) { Write-Error "NSIS installer not found"; exit 1 }
+          Copy-Item $installer.FullName "dist/TidyTray-v$ver-x64-Setup.exe"
+          $portable = @("src-tauri/target/release/$bin.exe", "LICENSE")
+          Compress-Archive -Path $portable -DestinationPath "dist/TidyTray-v$ver-x64-Portable.zip"
+          $lines = foreach ($f in Get-ChildItem dist -File) {
+            $h = (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower()
+            "$h  $($f.Name)"
+          }
+          $lines | Out-File -Encoding ascii "dist/SHA256SUMS.txt"
+          Get-ChildItem dist | Format-Table Name, Length
+
+      - name: Extract release notes from the changelog
+        shell: pwsh
+        run: |
+          $conf = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          $ver = [regex]::Escape($conf.version)
+          $text = Get-Content CHANGELOG.md -Raw
+          if ($text -match "(?ms)^## .*?$ver.*?`r?`n(.*?)(?=^## |\z)") {
+            $Matches[1].Trim() | Out-File -Encoding utf8 "dist/notes.md"
+          } else {
+            "TidyTray release." | Out-File -Encoding utf8 "dist/notes.md"
+          }
+
+      - name: Publish the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $conf = Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          $tag = "v$($conf.version)"
+          $files = @("dist/TidyTray-v$($conf.version)-x64-Setup.exe", "dist/TidyTray-v$($conf.version)-x64-Portable.zip", "dist/SHA256SUMS.txt")
+          # On a manual run there is no tag yet — create it at this commit.
+          gh api "repos/$env:GITHUB_REPOSITORY/git/ref/tags/$tag" --silent 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh api -X POST "repos/$env:GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$env:GITHUB_SHA"
+            if ($LASTEXITCODE -ne 0) { Write-Error "Could not create tag $tag"; exit 1 }
+          }
+          gh release view $tag --silent 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $files --clobber
+            gh release edit $tag --title "TidyTray $tag" --notes-file dist/notes.md
+          } else {
+            gh release create $tag $files --title "TidyTray $tag" --notes-file dist/notes.md
+          }
+          if ($LASTEXITCODE -ne 0) { Write-Error "Release publish failed"; exit 1 }
