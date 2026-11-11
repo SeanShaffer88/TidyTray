@@ -145,7 +145,7 @@ fn new_row(name: &str) -> ProcessRow {
 pub fn sort_rows(rows: &mut [ProcessRow], sort: SortBy) {
     match sort {
         SortBy::Cpu => rows.sort_by(|a, b| b.cpu.total_cmp(&a.cpu).then(b.memory.cmp(&a.memory))),
-        SortBy::Memory => rows.sort_by(|a, b| b.memory.cmp(&a.memory)),
+        SortBy::Memory => rows.sort_by_key(|r| std::cmp::Reverse(r.memory)),
         SortBy::Name => rows.sort_by_key(|r| r.title.to_lowercase()),
     }
 }

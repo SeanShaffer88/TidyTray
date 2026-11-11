@@ -209,3 +209,115 @@ pub fn get_safe_list(state: State<'_, AppState>) -> Vec<SafeRule> {
 pub fn check_path(state: State<'_, AppState>, path: String) -> Option<&'static str> {
     safe_list(&state.settings()).protects(&PathBuf::from(path))
 }
+
+// ---------------------------------------------------------------------------
+// Autonomous safety core (blueprint M1): manifest-driven Tier 1 cleanup that
+// only ever moves files to quarantine. Separate from the legacy Smart Clean
+// above; the UI reaches the safety core only through these commands.
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SafetyCategory {
+    pub id: String,
+    pub display_name: String,
+    pub requires_admin: bool,
+    pub enabled_by_default: bool,
+    pub min_age_days: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SafetyStatus {
+    pub manifest_version: String,
+    pub categories: Vec<SafetyCategory>,
+    pub autonomous_enabled: bool,
+    pub dry_runs_completed: u32,
+    pub dry_run_phase_complete: bool,
+    pub quarantine_files: u64,
+    pub quarantine_bytes: u64,
+}
+
+fn safety_ctx() -> crate::cleaner::RunContext {
+    crate::cleaner::RunContext::new(
+        crate::manifest::real_env(),
+        crate::appconfig::quarantine_dir(),
+        crate::appconfig::logs_dir(),
+    )
+}
+
+#[tauri::command]
+pub fn safety_status() -> TidyResult<SafetyStatus> {
+    let manifest = crate::manifest::Manifest::embedded().map_err(|e| TidyError::Other(e.to_string()))?;
+    let cfg = crate::appconfig::AppConfig::load_from(&crate::appconfig::config_path());
+    let q = crate::quarantine::Quarantine::new(crate::appconfig::quarantine_dir());
+    Ok(SafetyStatus {
+        manifest_version: manifest.manifest_version.clone(),
+        categories: manifest
+            .categories
+            .iter()
+            .map(|c| SafetyCategory {
+                id: c.id.clone(),
+                display_name: c.display_name.clone(),
+                requires_admin: c.requires_admin,
+                enabled_by_default: c.enabled_by_default,
+                min_age_days: c.min_age_days,
+            })
+            .collect(),
+        autonomous_enabled: cfg.autonomous.enabled,
+        dry_runs_completed: cfg.autonomous.dry_runs_completed,
+        dry_run_phase_complete: cfg.dry_run_phase_complete(),
+        quarantine_files: q.entries().len() as u64,
+        quarantine_bytes: q.total_size(),
+    })
+}
+
+/// Runs the Tier 1 safety cleaner. A real (non-dry) run is only honoured
+/// once the 3-run dry-run phase is complete; before that the request is
+/// downgraded to a dry run, and each completed dry run is counted.
+#[tauri::command]
+pub async fn safety_clean_now(dry_run: Option<bool>) -> TidyResult<crate::cleaner::RunReport> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let manifest = crate::manifest::Manifest::embedded().map_err(|e| TidyError::Other(e.to_string()))?;
+        let cfg_path = crate::appconfig::config_path();
+        let mut cfg = crate::appconfig::AppConfig::load_from(&cfg_path);
+        let want_dry = dry_run.unwrap_or(true);
+        let mode = if want_dry || !cfg.dry_run_phase_complete() {
+            crate::cleaner::RunMode::DryRun
+        } else {
+            crate::cleaner::RunMode::Apply
+        };
+        let report = crate::cleaner::run(&manifest, &cfg, &safety_ctx(), mode);
+        if report.dry_run && !report.cancelled {
+            cfg.autonomous.dry_runs_completed = cfg.autonomous.dry_runs_completed.saturating_add(1);
+            let _ = cfg.save_to(&cfg_path);
+        }
+        Ok(report)
+    })
+    .await
+    .map_err(|e| TidyError::Other(e.to_string()))?
+}
+
+/// Restores one quarantined file to its original location.
+#[tauri::command]
+pub fn safety_restore(path: String) -> TidyResult<String> {
+    let q = crate::quarantine::Quarantine::new(crate::appconfig::quarantine_dir());
+    let restored = q.restore(&PathBuf::from(&path)).map_err(|e| TidyError::Other(e.to_string()))?;
+    let log = crate::audit::AuditLog::new(crate::appconfig::logs_dir());
+    let _ = log.append(
+        &crate::audit::LogEntry::new("manual", "quarantine_restore")
+            .path(&restored)
+            .result("restored"),
+    );
+    Ok(restored.to_string_lossy().into_owned())
+}
+
+/// Manually empties quarantine (everything in it, regardless of age).
+#[tauri::command]
+pub fn safety_purge_quarantine() -> TidyResult<u64> {
+    let q = crate::quarantine::Quarantine::new(crate::appconfig::quarantine_dir());
+    let freed = q.purge_all();
+    let log = crate::audit::AuditLog::new(crate::appconfig::logs_dir());
+    let _ = log.append(&crate::audit::LogEntry::new("manual", "quarantine_purge").size(freed).result("manual"));
+    Ok(freed)
+}

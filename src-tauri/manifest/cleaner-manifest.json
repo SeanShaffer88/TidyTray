@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "manifest_version": "2026.01.1",
+  "checksum": "f2cbb775b9a53b03c6e3d2556323a23aefe1f2f42a479fdc6b3316b33c45e1ca",
+  "categories": [
+    {
+      "id": "temp_user",
+      "display_name": "User Temp Files",
+      "paths": [
+        "${TEMP}",
+        "${LOCALAPPDATA}\\Temp"
+      ],
+      "min_age_days": 7,
+      "requires_admin": false,
+      "skip_locked": true,
+      "max_gb_per_run": 5,
+      "enabled_by_default": true,
+      "tier": 1
+    },
+    {
+      "id": "temp_windows",
+      "display_name": "Windows Temp Files",
+      "paths": [
+        "${SystemRoot}\\Temp"
+      ],
+      "min_age_days": 30,
+      "requires_admin": true,
+      "skip_locked": true,
+      "max_gb_per_run": 2,
+      "enabled_by_default": false,
+      "tier": 1
+    },
+    {
+      "id": "browser_cache_chromium",
+      "display_name": "Chromium Browser Cache",
+      "paths": [
+        "${LOCALAPPDATA}\\Google\\Chrome\\User Data\\*\\Cache\\Cache_Data",
+        "${LOCALAPPDATA}\\Google\\Chrome\\User Data\\*\\Code Cache",
+        "${LOCALAPPDATA}\\Google\\Chrome\\User Data\\*\\GPUCache",
+        "${LOCALAPPDATA}\\Microsoft\\Edge\\User Data\\*\\Cache\\Cache_Data",
+        "${LOCALAPPDATA}\\Microsoft\\Edge\\User Data\\*\\Code Cache",
+        "${LOCALAPPDATA}\\Microsoft\\Edge\\User Data\\*\\GPUCache"
+      ],
+      "min_age_days": 14,
+      "requires_admin": false,
+      "skip_locked": true,
+      "max_gb_per_run": 3,
+      "enabled_by_default": true,
+      "tier": 1
+    },
+    {
+      "id": "browser_cache_firefox",
+      "display_name": "Firefox Cache",
+      "paths": [
+        "${APPDATA}\\Mozilla\\Firefox\\Profiles\\*\\cache2"
+      ],
+      "min_age_days": 14,
+      "requires_admin": false,
+      "skip_locked": true,
+      "max_gb_per_run": 2,
+      "enabled_by_default": true,
+      "tier": 1
+    },
+    {
+      "id": "gpu_shader_cache",
+      "display_name": "GPU Shader Cache",
+      "paths": [
+        "${LOCALAPPDATA}\\D3DSCache",
+        "${LOCALAPPDATA}\\NVIDIA\\DXCache",
+        "${LOCALAPPDATA}\\AMD\\DxCache"
+      ],
+      "min_age_days": 7,
+      "requires_admin": false,
+      "skip_locked": true,
+      "max_gb_per_run": 1,
+      "enabled_by_default": true,
+      "tier": 1
+    },
+    {
+      "id": "thumbnail_cache",
+      "display_name": "Thumbnail & Icon Cache",
+      "paths": [
+        "${LOCALAPPDATA}\\Microsoft\\Windows\\Explorer\\thumbcache_*.db",
+        "${LOCALAPPDATA}\\Microsoft\\Windows\\Explorer\\iconcache_*.db"
+      ],
+      "min_age_days": 0,
+      "requires_admin": false,
+      "skip_locked": true,
+      "max_gb_per_run": 1,
+      "enabled_by_default": true,
+      "tier": 1
+    },
+    {
+      "id": "crash_dumps",
+      "display_name": "Crash Dumps & WER",
+      "paths": [
+        "${LOCALAPPDATA}\\CrashDumps",
+        "${ProgramData}\\Microsoft\\Windows\\WER\\Temp"
+      ],
+      "min_age_days": 30,
+      "requires_admin": false,
+      "skip_locked": true,
+      "max_gb_per_run": 1,
+      "enabled_by_default": true,
+      "tier": 1
+    },
+    {
+      "id": "delivery_optimization",
+      "display_name": "Delivery Optimization Cache",
+      "paths": [
+        "${ProgramData}\\Microsoft\\Windows\\DeliveryOptimization\\Cache"
+      ],
+      "min_age_days": 30,
+      "requires_admin": true,
+      "skip_locked": true,
+      "max_gb_per_run": 2,
+      "enabled_by_default": false,
+      "tier": 1
+    },
+    {
+      "id": "ps_history",
+      "display_name": "PowerShell & Terminal History",
+      "paths": [
+        "${APPDATA}\\Microsoft\\Windows\\PowerShell\\PSReadLine\\ConsoleHost_history.txt"
+      ],
+      "min_age_days": 0,
+      "requires_admin": false,
+      "skip_locked": false,
+      "max_gb_per_run": 1,
+      "enabled_by_default": false,
+      "tier": 1
+    }
+  ]
+}

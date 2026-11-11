@@ -126,7 +126,7 @@ pub fn find_duplicates(candidates: Vec<(PathBuf, u64)>) -> Vec<DuplicateGroup> {
             }
         }
     }
-    groups.sort_by(|a, b| b.wasted.cmp(&a.wasted));
+    groups.sort_by_key(|g| std::cmp::Reverse(g.wasted));
     groups
 }
 
@@ -173,7 +173,7 @@ pub fn scan(root: &Path, min_bytes: u64, safe: &SafeList, top: usize) -> FilesRe
         b.bytes = bytes;
     }
     let mut largest = big.into_inner().unwrap();
-    largest.sort_by(|a, b| b.bytes.cmp(&a.bytes));
+    largest.sort_by_key(|f| std::cmp::Reverse(f.bytes));
     largest.truncate(top);
     FilesReport {
         root: root.to_string_lossy().into_owned(),

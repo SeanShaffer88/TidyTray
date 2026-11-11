@@ -1,7 +1,16 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 //! Tidy - PC cleanup & health for Windows.
 
+mod appconfig;
+mod audit;
+mod cleaner;
 mod commands;
+mod lockcheck;
+mod manifest;
+mod quarantine;
+#[cfg(test)]
+mod safety_tests;
+mod sha256;
 mod files;
 mod health;
 mod processes;
@@ -67,7 +76,7 @@ fn spawn_sampler(app: AppHandle) {
             loop {
                 let state = app.state::<AppState>();
                 state.sample();
-                if tick % 15 == 0 {
+                if tick.is_multiple_of(15) {
                     if let (Some(tray), Ok(sys)) = (app.tray_by_id("tidy-tray"), state.sys.lock()) {
                         let _ = tray.set_tooltip(Some(health::tray_summary(&sys)));
                     }
@@ -110,6 +119,10 @@ fn main() {
             commands::get_settings,
             commands::save_settings,
             commands::get_safe_list,
+            commands::safety_status,
+            commands::safety_clean_now,
+            commands::safety_restore,
+            commands::safety_purge_quarantine,
             commands::check_path,
         ])
         .run(tauri::generate_context!())
