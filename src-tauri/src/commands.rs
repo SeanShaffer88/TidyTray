@@ -14,7 +14,17 @@ use crate::startup::{self, StartupItem};
 use crate::state::{AppState, Settings, TidyError, TidyResult};
 
 fn demo_mode() -> bool {
-    std::env::var_os("TIDY_DEMO").is_some()
+    // Demo data is a development aid: release builds ignore the
+    // variable entirely, so a stray TIDY_DEMO in the environment can
+    // never make a shipped build show mock data.
+    #[cfg(debug_assertions)]
+    {
+        std::env::var_os("TIDY_DEMO").is_some()
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        false
+    }
 }
 
 fn safe_list(settings: &Settings) -> SafeList {

@@ -122,7 +122,7 @@ discipline — the autonomous engine never touches it:
 
 ## Tier 2 (app removal and installs)
 
-- The **removal catalog is fixed in the build** (62 bundled apps with
+- The **removal catalog is fixed in the build** (84 bundled apps with
   Safe/Caution/Advanced badges). Windows-critical packages and core
   utilities are never listed. Callers — UI, CLI, or the elevated helper
   itself — can only ever remove catalog packages: the helper re-checks
