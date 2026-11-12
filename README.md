@@ -168,7 +168,7 @@ System folders (`System32`, `WinSxS`, `Program Files`), your personal folders (D
 
 <a class="download-btn-action" href="https://github.com/SeanShaffer88/TidyTray/releases/latest"><img src="assets/download-compact.png" width="230" alt="Download the latest TidyTray"></a>
 
-1. Download **TidyTray-v1.1.0-x64-Portable.zip** (portable) or **TidyTray-v1.1.0-x64-Setup.exe** (installer) from the latest release.
+1. Download **TidyTray-v1.2.0-x64-Portable.zip** (portable) or **TidyTray-v1.2.0-x64-Setup.exe** (installer) from the latest release.
 2. For the portable zip: right-click → **Extract All…**
 3. Run **TidyTray.exe**, or run the setup if you want a Start menu entry.
 4. TidyTray runs Smart Scan on launch. Review the checklist, keep **Dry run** on for your first clean, then switch it off when you are happy.
